@@ -8,6 +8,7 @@ import time
 
 from pathlib import Path
 from AO3 import GuestSession, Session, Work
+from slugify import slugify
 from typing import Dict, List, Set
 
 from . import constants
@@ -93,7 +94,8 @@ class Engine:
         password = self.config["credentials"]["password"]
         try:
             self.session = Session(username, password)
-            self.session.user.reload()
+            self.session.refresh_auth_token()
+            # self.session.user.reload()
             LOG.info(f"Authenticated as user: {self.session.username}")
         except AO3.utils.LoginError:
             LOG.error(
@@ -125,7 +127,7 @@ class Engine:
         return (
             self.downloads_dir
             / self.session.username
-            / (f"{work.id} - {work.title}.{self.filetype.lower()}")
+            / (f"{work.id}_{slugify(work.title)}.{self.filetype.lower()}")
         )
 
     def _get_existing_chapter_hashes(self, work: Work) -> Dict[str, str]:
@@ -144,7 +146,7 @@ class Engine:
     def _check_for_changed_chapters(self, work: Work) -> None:
         LOG.info(f"Checking for changes in {work.id} - {work.title}")
         current_chapters = {
-            chapter.title: md5(chapter.text) for chapter in work.chapters
+            md5(chapter.title): md5(chapter.text) for chapter in work.chapters
         }
         existing_chapters = self._get_existing_chapter_hashes(work)
         if current_chapters != existing_chapters:
@@ -154,19 +156,33 @@ class Engine:
             LOG.info(f"No changes found in chapters for work: {work.id} - {work.title}")
 
     @AO3.threadable.threadable
+    def _load_work(self, work: Work) -> None:
+        try:
+            work.set_session(self.session)
+            work.reload()
+        except Exception as e:
+            LOG.error(f"Exception while loading {work.id}: {e}")
+
+    @AO3.threadable.threadable
     def _download_work(self, work: Work) -> None:
-        filename = self._get_download_file_path(work)
-        LOG.info(f"Downloading {work.id} - {work.title} to: {filename}")
-        with open(filename, "wb") as f:
-            f.write(work.download(self.filetype))
+        try:
+            filename = self._get_download_file_path(work)
+            LOG.info(f"Downloading {work.id} - {work.title} to: {filename}")
+            with open(filename, "wb") as f:
+                f.write(work.download(self.filetype))
+        except Exception as e:
+            LOG.error(f"Exception while downloading {work.id}: {e}")
 
     @AO3.threadable.threadable
     def _update_chapter_hashes(self, work: Work) -> None:
-        chapters = self._changed_works[work.id]
-        filename = self._get_chapter_hashes_file(work)
-        with open(filename, "w", encoding="utf-8") as f:
-            f.write("\n".join(f"{k}\t{v}" for k, v in chapters.items()))
-        LOG.info(f"Updated chapter hashes for work: {work.id} - {work.title}")
+        try:
+            chapters = self._changed_works[work.id]
+            filename = self._get_chapter_hashes_file(work)
+            with open(filename, "w", encoding="utf-8") as f:
+                f.write("\n".join(f"{k}\t{v}" for k, v in chapters.items()))
+            LOG.info(f"Updated chapter hashes for work: {work.id} - {work.title}")
+        except Exception as e:
+            LOG.error(f"Exception while updating hashes for {work.id}: {e}")
 
     def _load_works(self, works: List[Work]):
         start = time.time()
@@ -174,7 +190,7 @@ class Engine:
             threads = []
             for work in works:
                 self._works[work.id] = work
-                threads.append(work.reload(threaded=True))
+                threads.append(self._load_work(work, threaded=True))
             for thread in threads:
                 thread.join()
         else:
