@@ -35,7 +35,9 @@ By default, downloaded files will be in the `download` subdirectory in the `ao3d
 and the default filetype for downloads is PDF. A custom download location and filetype can be 
 specified in settings.ini.
 
-ao3d saves all its data to the `data` subdirectory in the `ao3d` folder.
+ao3d saves all its data to the `data` subdirectory in the `ao3d` folder. If you want the tool
+to forget any data associated with previous runs, simply delete this subdirectory. It will be
+regenerated on the next run.
 
 For more information about the configuration file (settings.ini), please read the comments in
 that file.
@@ -44,6 +46,9 @@ that file.
 ## Features
 * Mult-threaded downloading of bookmarks to supported formats (AZW3, EPUB, HTML, 
 MOBI, PDF)
+
+## Tested
+* On Ubuntu and Windows
 
 ## Known issues
 * Right now bookmarked series cannot be downloaded. A workaround is to bookmark each 
