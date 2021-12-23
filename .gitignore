@@ -127,3 +127,9 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# ao3d
+settings.ini
+log.txt
+data/
+downloads/
