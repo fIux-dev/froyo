@@ -2,9 +2,9 @@
 Utility for downloading works from [AO3](https://archiveofourown.org/) (Archive Of Our Own)
 
 ## Installation
-**Requirements**: [Python](https://www.python.org/) >= 3.8 (with the [pip](https://pypi.org/project/pip/) package manager), [Git](https://git-scm.com/)
+**Requirements**: [Python](https://www.python.org/) >= 3.8 (with the [pip](https://pypi.org/project/pip/) package manager)
 
-1. Clone the repository.
+1. Clone the repository (or download the .ZIP).
 ```
 $ git clone https://github.com/fIux-dev/ao3d.git
 ```
