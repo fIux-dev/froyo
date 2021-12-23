@@ -4,10 +4,11 @@ import hashlib
 import logging
 import os
 import sys
+import time
 
 from pathlib import Path
 from AO3 import GuestSession, Session, Work
-from typing import Dict
+from typing import Dict, List, Set
 
 from . import constants
 
@@ -22,8 +23,12 @@ class Engine:
     base_dir: Path
     downloads_dir: Path
     filetype = str
-    config: configparser.ConfigParser
     session: GuestSession
+    use_threading = bool
+    config: configparser.ConfigParser
+
+    _works: Dict[int, Work] = {}
+    _changed_works: Dict[int, Dict[str, str]] = {}
 
     def __init__(self, cwd):
         self.base_dir = Path(cwd)
@@ -60,6 +65,12 @@ class Engine:
         LOG.info(f"Download filetype set to: {self.filetype}")
 
         LOG.info(f"Current downloads directory: {self.downloads_dir.resolve()}")
+
+        if "engine" in config and "threading" in config["engine"]:
+            self.use_threading = config["engine"]["threading"]
+        else:
+            self.use_threading = False
+        LOG.info(f"Use threading: {self.use_threading}")
 
         return config
 
@@ -100,72 +111,137 @@ class Engine:
         downloads_dir = self.downloads_dir / self.session.username
         downloads_dir.mkdir(parents=True, exist_ok=True)
 
-    def _get_existing_chapters_file(self, work: Work) -> Path:
-        if not work.loaded:
-            work.reload()
+    def _get_chapter_hashes_file(self, work: Work) -> Path:
         return (
             self.base_dir
             / constants.DATA_DIR
             / self.session.username
             / constants.BOOKMARKS_DIR
-            / (work.title + ".chapters")
+            / (f"{work.id}.chapters")
         )
 
     def _get_download_file_path(self, work: Work) -> Path:
-        if not work.loaded:
-            work.reload()
         return (
             self.downloads_dir
             / self.session.username
-            / (work.title + "." + self.filetype.lower())
+            / (f"{work.id} - {work.title}.{self.filetype.lower()}")
         )
 
-    def _get_existing_chapters(self, work: Work) -> Dict[str, str]:
-        filename = self._get_existing_chapters_file(work)
+    def _get_existing_chapter_hashes(self, work: Work) -> Dict[str, str]:
+        filename = self._get_chapter_hashes_file(work)
         try:
             return dict(line.strip().split("\t") for line in open(filename))
         except FileNotFoundError:
-            LOG.info(f"No existing chapters exist for work: {work.title}")
+            LOG.info(f"No saved chapter hashes for work: {work.id} - {work.title}")
         except Exception:
             LOG.warning(f"Unspecified error occurred trying to open file: {filename}")
         return set()
 
-    def _download_work(self, work: Work) -> None:
-        filename = self._get_download_file_path(work)
-        print(f"Downloading {work.title} to: {filename}")
-        if not work.loaded:
-            work.reload()
-        work.download_to_file(filename, self.filetype)
-
-    def _update_existing_chapters(self, work: Work, chapters: Dict[str, str]) -> None:
-        filename = self._get_existing_chapters_file(work)
-        with open(filename, "w") as f:
-            f.write("\n".join(f"{k}\t{v}" for k, v in chapters.items()))
-        LOG.info(f"Successfully updated chapters for work: {work.title}")
-
-    def _check_for_new_chapters(self, work: Work) -> None:
-        LOG.info(f"Checking for updates for {work.title}")
-        if not work.loaded:
-            work.reload()
+    @AO3.threadable.threadable
+    def _check_for_changed_chapters(self, work: Work) -> None:
+        LOG.info(f"Checking for changes in {work.id} - {work.title}")
         current_chapters = {
             chapter.title: md5(chapter.text) for chapter in work.chapters
         }
-        existing_chapters = self._get_existing_chapters(work)
+        existing_chapters = self._get_existing_chapter_hashes(work)
         if current_chapters != existing_chapters:
-            LOG.info(f"Found changes in chapters for work: {work.title}")
-            self._download_work(work)
-            self._update_existing_chapters(work, current_chapters)
+            LOG.info(f"Found changes in chapters for work: {work.id} - {work.title}")
+            self._changed_works[work.id] = current_chapters
         else:
-            LOG.info(f"No changes found in chapters for work: {work.title}")
+            LOG.info(f"No changes found in chapters for work: {work.id} - {work.title}")
 
-    def _check_for_updates_to_bookmarks(self) -> None:
-        LOG.info("Getting bookmarks...")
+    @AO3.threadable.threadable
+    def _download_work(self, work: Work) -> None:
+        filename = self._get_download_file_path(work)
+        LOG.info(f"Downloading {work.id} - {work.title} to: {filename}")
+        work.download_to_file(filename, self.filetype)
+
+    @AO3.threadable.threadable
+    def _update_chapter_hashes(self, work: Work) -> None:
+        chapters = self._changed_works[work.id]
+        filename = self._get_chapter_hashes_file(work)
+        with open(filename, "w") as f:
+            f.write("\n".join(f"{k}\t{v}" for k, v in chapters.items()))
+        LOG.info(f"Updated chapter hashes for work: {work.id} - {work.title}")
+
+     
+    def _load_works(self, works: List[Work]):
+        start = time.time()
+        if self.use_threading:
+            threads = []
+            for work in works:
+                self._works[work.id] = work    
+                threads.append(work.reload(threaded=True))
+            for thread in threads:
+                thread.join()
+        else:
+            for work in works:
+                self._works[work.id] = work
+                work.reload()
+        LOG.info(f"(PERF) Loaded {len(works)} works in {round(time.time() - start, 1)}s.")
+
+    def _check_for_updates(self, works: List[Work]):
+        start = time.time()
+        if self.use_threading:
+            threads = []
+            for work in works:
+                threads.append(self._check_for_changed_chapters(work, threaded=True))
+            for thread in threads:
+                thread.join()
+        else:
+            for work in works:
+                self._check_for_changed_chapters(work)
+        LOG.info(f"(PERF) Checked for updates in {len(works)} works in {round(time.time()-start, 1)}s.")
+
+    def _download_updated_works(self):
+        start = time.time()
+        if self.use_threading:
+            threads = []
+            for work_id in self._changed_works:
+                if work_id in self._works:
+                    threads.append(self._download_work(self._works[work_id], threaded=True))
+            for thread in threads:
+                thread.join()
+        else:
+            for work_id in self._changed_works:
+                if work_id in self._works:
+                    self._download_work(self._works[work_id])
+        LOG.info(f"(PERF) Downloaded {len(self._changed_works)} works in {round(time.time()-start, 1)}s.")
+
+
+    def _update_works_on_disk(self):
+        start = time.time()
+        if self.use_threading:
+            threads = []
+            for work_id in self._changed_works:
+                if work_id in self._works:
+                    threads.append(self._update_chapter_hashes(self._works[work_id], threaded=True))
+            for thread in threads:
+                thread.join()
+        else:
+            for work_id in self._changed_works:
+                if work_id in self._works:
+                    self._update_chapter_hashes(self._works[work_id])
+        LOG.info(f"(PERF) Updated {len(self._changed_works)} works on disk in {round(time.time()-start, 1)}s.")
+        self._changed_works = {}
+
+
+    def _check_and_download_updated_bookmarks(self) -> None:
+        LOG.info("Loading bookmarked works...")
+
+        start = time.time()
         # TODO: send PR to AO3 API to make this work for series bookmarks
-        for work in self.session.get_bookmarks():
-            self._check_for_new_chapters(work)
+        bookmarks = self.session.get_bookmarks(use_threading=self.use_threading)
+        LOG.info(f"(PERF) Got {len(bookmarks)} bookmarks in {round(time.time() - start, 1)}s.")
+
+        self._load_works(bookmarks)
+        self._check_for_updates(bookmarks)
+        self._download_updated_works()
+        self._update_works_on_disk()
+        
 
     def run(self) -> None:
         if isinstance(self.session, Session):
-            self._check_for_updates_to_bookmarks()
+            self._check_and_download_updated_bookmarks()
         else:
             LOG.info("Skipping checking bookmarks since session is a guest session.")

@@ -1,3 +1,5 @@
+; ao3d config file example
+;
 ; This is an example configuration file.
 ; Lines beginning with the `;` character indicate a comment and will not be
 ; processed.
@@ -18,5 +20,11 @@
 ; downloaded to the 'downloads' folder in the same file as the tool.
 ; Valid choices for filetype include: AZW3, EPUB, HTML, MOBI, PDF
 [downloads]
-directory=./downloads
+directory=downloads
 filetype=PDF
+
+; This section controls settings for how the tool behaves.
+; Threading enables multiple downloads to occur concurrently in different CPU
+; threads. This will make bulk downloading a lot faster.
+[engine]
+threading=True
