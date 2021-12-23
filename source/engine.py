@@ -178,7 +178,7 @@ class Engine:
             for work in works:
                 self._works[work.id] = work
                 work.reload()
-        LOG.info(f"(PERF) Loaded {len(works)} works in {round(time.time() - start, 1)}s.")
+        LOG.info(f"(PERF) Loaded {len(works)} works in {round(time.time() - start, 5)}s.")
 
     def _check_for_updates(self, works: List[Work]):
         start = time.time()
@@ -191,7 +191,7 @@ class Engine:
         else:
             for work in works:
                 self._check_for_changed_chapters(work)
-        LOG.info(f"(PERF) Checked for updates in {len(works)} works in {round(time.time()-start, 1)}s.")
+        LOG.info(f"(PERF) Checked for updates in {len(works)} works in {round(time.time()-start, 5)}s.")
 
     def _download_updated_works(self):
         start = time.time()
@@ -206,7 +206,7 @@ class Engine:
             for work_id in self._changed_works:
                 if work_id in self._works:
                     self._download_work(self._works[work_id])
-        LOG.info(f"(PERF) Downloaded {len(self._changed_works)} works in {round(time.time()-start, 1)}s.")
+        LOG.info(f"(PERF) Downloaded {len(self._changed_works)} works in {round(time.time()-start, 5)}s.")
 
 
     def _update_works_on_disk(self):
@@ -222,7 +222,7 @@ class Engine:
             for work_id in self._changed_works:
                 if work_id in self._works:
                     self._update_chapter_hashes(self._works[work_id])
-        LOG.info(f"(PERF) Updated {len(self._changed_works)} works on disk in {round(time.time()-start, 1)}s.")
+        LOG.info(f"(PERF) Updated {len(self._changed_works)} works on disk in {round(time.time()-start, 5)}s.")
         self._changed_works = {}
 
 
@@ -232,7 +232,7 @@ class Engine:
         start = time.time()
         # TODO: send PR to AO3 API to make this work for series bookmarks
         bookmarks = self.session.get_bookmarks(use_threading=self.use_threading)
-        LOG.info(f"(PERF) Got {len(bookmarks)} bookmarks in {round(time.time() - start, 1)}s.")
+        LOG.info(f"(PERF) Got {len(bookmarks)} bookmarks in {round(time.time() - start, 5)}s.")
 
         self._load_works(bookmarks)
         self._check_for_updates(bookmarks)

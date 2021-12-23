@@ -2,9 +2,9 @@
 
 import logging
 import os
+import time
 
 from source import constants
-
 from source.engine import Engine
 
 LOG = logging.getLogger(__name__)
@@ -20,8 +20,11 @@ logging.basicConfig(
 
 
 def main() -> None:
+    LOG.info("Starting...")
+    start = time.time()
     engine = Engine(os.getcwd())
     engine.run()
+    LOG.info(f"(PERF) Done in {round(time.time() - start, 5)}s.")
 
 
 if __name__ == "__main__":
