@@ -23,7 +23,7 @@ password=<your AO3 password>
 ```
 4. Run.
 ```
-$ python ao3d.py
+$ python3 ao3d.py
 ```
 
 ## Features
