@@ -35,7 +35,9 @@ By default, downloaded files will be in the `download` subdirectory in the `ao3d
 and the default filetype for downloads is PDF. A custom download location and filetype can be 
 specified in settings.ini.
 
-ao3d saves all its data to the `data` subdirectory in the `ao3d` folder.
+ao3d saves all its data to the `data` subdirectory in the `ao3d` folder. If you want the tool
+to forget any data associated with previous runs, simply delete this subdirectory. It will be
+regenerated on the next run.
 
 For more information about the configuration file (settings.ini), please read the comments in
 that file.
