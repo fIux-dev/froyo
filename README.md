@@ -47,6 +47,9 @@ that file.
 * Mult-threaded downloading of bookmarks to supported formats (AZW3, EPUB, HTML, 
 MOBI, PDF)
 
+## Tested
+* On Ubuntu and Windows
+
 ## Known issues
 * Right now bookmarked series cannot be downloaded. A workaround is to bookmark each 
 work in the series individually.
