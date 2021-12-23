@@ -106,8 +106,9 @@ class Engine:
         LOG.info("Validating directory structure...")
         data_dir = self.base_dir / constants.DATA_DIR / self.session.username
         data_dir.mkdir(parents=True, exist_ok=True)
-        bookmarks_dir = data_dir / constants.BOOKMARKS_DIR
-        bookmarks_dir.mkdir(parents=True, exist_ok=True)
+        if isinstance(self.session, Session):
+            bookmarks_dir = data_dir / constants.BOOKMARKS_DIR
+            bookmarks_dir.mkdir(parents=True, exist_ok=True)
         downloads_dir = self.downloads_dir / self.session.username
         downloads_dir.mkdir(parents=True, exist_ok=True)
 
