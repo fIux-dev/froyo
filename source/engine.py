@@ -130,7 +130,9 @@ class Engine:
     def _get_existing_chapter_hashes(self, work: Work) -> Dict[str, str]:
         filename = self._get_chapter_hashes_file(work)
         try:
-            return dict(line.strip().split("\t") for line in open(filename))
+            return dict(
+                line.strip().split("\t") for line in open(filename, encoding="utf-8")
+            )
         except FileNotFoundError:
             LOG.info(f"No saved chapter hashes for work: {work.id} - {work.title}")
         except Exception:
@@ -154,23 +156,23 @@ class Engine:
     def _download_work(self, work: Work) -> None:
         filename = self._get_download_file_path(work)
         LOG.info(f"Downloading {work.id} - {work.title} to: {filename}")
-        work.download_to_file(filename, self.filetype)
+        with open(filename, "wb") as f:
+            f.write(work.download(self.filetype))
 
     @AO3.threadable.threadable
     def _update_chapter_hashes(self, work: Work) -> None:
         chapters = self._changed_works[work.id]
         filename = self._get_chapter_hashes_file(work)
-        with open(filename, "w") as f:
+        with open(filename, "w", encoding="utf-8") as f:
             f.write("\n".join(f"{k}\t{v}" for k, v in chapters.items()))
         LOG.info(f"Updated chapter hashes for work: {work.id} - {work.title}")
 
-     
     def _load_works(self, works: List[Work]):
         start = time.time()
         if self.use_threading:
             threads = []
             for work in works:
-                self._works[work.id] = work    
+                self._works[work.id] = work
                 threads.append(work.reload(threaded=True))
             for thread in threads:
                 thread.join()
@@ -178,7 +180,9 @@ class Engine:
             for work in works:
                 self._works[work.id] = work
                 work.reload()
-        LOG.info(f"(PERF) Loaded {len(works)} works in {round(time.time() - start, 5)}s.")
+        LOG.info(
+            f"(PERF) Loaded {len(works)} works in {round(time.time() - start, 5)}s."
+        )
 
     def _check_for_updates(self, works: List[Work]):
         start = time.time()
@@ -191,7 +195,9 @@ class Engine:
         else:
             for work in works:
                 self._check_for_changed_chapters(work)
-        LOG.info(f"(PERF) Checked for updates in {len(works)} works in {round(time.time()-start, 5)}s.")
+        LOG.info(
+            f"(PERF) Checked for updates in {len(works)} works in {round(time.time()-start, 5)}s."
+        )
 
     def _download_updated_works(self):
         start = time.time()
@@ -199,15 +205,18 @@ class Engine:
             threads = []
             for work_id in self._changed_works:
                 if work_id in self._works:
-                    threads.append(self._download_work(self._works[work_id], threaded=True))
+                    threads.append(
+                        self._download_work(self._works[work_id], threaded=True)
+                    )
             for thread in threads:
                 thread.join()
         else:
             for work_id in self._changed_works:
                 if work_id in self._works:
                     self._download_work(self._works[work_id])
-        LOG.info(f"(PERF) Downloaded {len(self._changed_works)} works in {round(time.time()-start, 5)}s.")
-
+        LOG.info(
+            f"(PERF) Downloaded {len(self._changed_works)} works in {round(time.time()-start, 5)}s."
+        )
 
     def _update_works_on_disk(self):
         start = time.time()
@@ -215,16 +224,19 @@ class Engine:
             threads = []
             for work_id in self._changed_works:
                 if work_id in self._works:
-                    threads.append(self._update_chapter_hashes(self._works[work_id], threaded=True))
+                    threads.append(
+                        self._update_chapter_hashes(self._works[work_id], threaded=True)
+                    )
             for thread in threads:
                 thread.join()
         else:
             for work_id in self._changed_works:
                 if work_id in self._works:
                     self._update_chapter_hashes(self._works[work_id])
-        LOG.info(f"(PERF) Updated {len(self._changed_works)} works on disk in {round(time.time()-start, 5)}s.")
+        LOG.info(
+            f"(PERF) Updated {len(self._changed_works)} works on disk in {round(time.time()-start, 5)}s."
+        )
         self._changed_works = {}
-
 
     def _check_and_download_updated_bookmarks(self) -> None:
         LOG.info("Loading bookmarked works...")
@@ -232,13 +244,14 @@ class Engine:
         start = time.time()
         # TODO: send PR to AO3 API to make this work for series bookmarks
         bookmarks = self.session.get_bookmarks(use_threading=self.use_threading)
-        LOG.info(f"(PERF) Got {len(bookmarks)} bookmarks in {round(time.time() - start, 5)}s.")
+        LOG.info(
+            f"(PERF) Got {len(bookmarks)} bookmarks in {round(time.time() - start, 5)}s."
+        )
 
         self._load_works(bookmarks)
         self._check_for_updates(bookmarks)
         self._download_updated_works()
         self._update_works_on_disk()
-        
 
     def run(self) -> None:
         if isinstance(self.session, Session):

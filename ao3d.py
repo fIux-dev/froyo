@@ -13,7 +13,7 @@ logging.basicConfig(
     datefmt="%m/%d/%Y %I:%M:%S%p",
     level=logging.INFO,
     handlers=[
-        logging.FileHandler(constants.LOG_FILE, mode="w"),
+        logging.FileHandler(constants.LOG_FILE, mode="w", encoding="utf-8"),
         logging.StreamHandler(),
     ],
 )
