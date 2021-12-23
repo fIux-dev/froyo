@@ -111,7 +111,7 @@ class Engine:
             / (work.title + ".chapters")
         )
 
-    def _get_download_file_path(self, work: Work, filetype: str) -> Path:
+    def _get_download_file_path(self, work: Work) -> Path:
         if not work.loaded:
             work.reload()
         return (
