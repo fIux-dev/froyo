@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 
+import AO3
 import logging
 import os
 import time
 
-from source import constants
+from source import constants, gui as gui_module
 from source.engine import Engine
+from source.gui import GUI
 
 LOG = logging.getLogger(__name__)
 logging.basicConfig(
@@ -21,11 +23,14 @@ logging.basicConfig(
 
 def main() -> None:
     LOG.info("Starting...")
-    start = time.time()
-    engine = Engine(os.getcwd())
-    engine.run()
-    LOG.info(f"(PERF) Done in {round(time.time() - start, 5)}s.")
-
+    try:
+        engine = Engine(os.getcwd())
+        gui = GUI(engine)
+        gui.run()
+    except AO3.utils.HTTPError:
+        LOG.error("Hit rate limiting error. Please try again later.")
+        gui_module.display_rate_limiting_error()
+        exit(1)
 
 if __name__ == "__main__":
     main()
