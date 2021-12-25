@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import AO3
 import logging
 import os
@@ -31,6 +29,7 @@ def main() -> None:
         LOG.error("Hit rate limiting error. Please try again later.")
         gui_module.display_rate_limiting_error()
         exit(1)
+
 
 if __name__ == "__main__":
     main()

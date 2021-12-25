@@ -58,9 +58,6 @@ class GUI:
         username = dpg.get_value("username_input")
         password = dpg.get_value("password_input")
 
-        if not (username and password):
-            return
-
         result = self.engine.login(username, password)
         self._set_status_label_conditionally(
             "login_status_label", result, "Logged in!", "Login error"
@@ -95,20 +92,31 @@ class GUI:
     def _save_settings(self, sender=None, data=None) -> None:
         dpg.configure_item("save_settings_status_label", show=False)
 
-        config = Configuration()
+        username = ""
+        password = ""
         if dpg.get_value("remember_me_checkbox"):
-            config.username = dpg.get_value("username_input")
-            config.password = dpg.get_value("password_input")
-        config.downloads_dir = Path(dpg.get_value("downloads_dir_input"))
-        config.filetype = dpg.get_value("filetype_combo")
-        config.should_use_threading = dpg.get_value("use_threading_checkbox")
-        config.concurrency_limit = dpg.get_value("concurrency_limit_input")
-        config.should_rate_limit = dpg.get_value("rate_limit_checkbox")
-        self.engine.config = config
-        result = self.engine.write_configuration_file(config)
+            username = dpg.get_value("username_input")
+            password = dpg.get_value("password_input")
+        downloads_dir = Path(dpg.get_value("downloads_dir_input"))
+        filetype = dpg.get_value("filetype_combo")
+        should_use_threading = dpg.get_value("use_threading_checkbox")
+        concurrency_limit = dpg.get_value("concurrency_limit_input")
+        should_rate_limit = dpg.get_value("rate_limit_checkbox")
+        result = self.engine.update_settings(
+            username=username,
+            password=password,
+            downloads_dir=downloads_dir,
+            filetype=filetype,
+            should_use_threading=should_use_threading,
+            concurrency_limit=concurrency_limit,
+            should_rate_limit=should_rate_limit,
+        )
 
         self._set_status_label_conditionally(
-            "save_settings_status_label", result, "Saved!", "Save error"
+            "save_settings_status_label",
+            result,
+            "Saved! Restart for engine changes.",
+            "Save error",
         )
 
     def _remove_work_item(self, sender=None, data=None, user_data=None) -> None:
@@ -288,16 +296,12 @@ class GUI:
 
     # GUI setup functions
     def _make_gui(self) -> None:
-        with dpg.window(
-            label="ao3d", tag="primary_window"
-        ):
+        with dpg.window(label="ao3d", tag="primary_window"):
             with dpg.tab_bar(tag="tabs"):
                 self._make_settings_tab()
                 self._make_downloads_tab()
 
     def _make_settings_tab(self) -> None:
-        self.engine.parse_configuration_file()
-
         with dpg.tab(label="Settings", tag="settings_tab"):
             with dpg.child_window(
                 tag="settings_child_window", width=500, height=410,
@@ -334,6 +338,15 @@ class GUI:
                         dpg.add_text(
                             "", tag="login_status_label", show=False, indent=200
                         )
+                        if self.engine.config.username or self.engine.config.password:
+                            self._set_status_label_conditionally(
+                                "login_status_label",
+                                # Since this function compares if result == 0
+                                not self.engine.session.is_authed,
+                                "Logged in!",
+                                "Login error",
+                            )
+
                     dpg.add_checkbox(
                         label="Remember me?",
                         tag="remember_me_checkbox",
@@ -342,7 +355,6 @@ class GUI:
                         ),
                     )
                 dpg.add_spacer(tag="login_group_spacer", height=20)
-                self._login()
 
                 with dpg.group(tag="download_settings_group"):
                     dpg.add_text("Downloads", tag="download_settings_label")
@@ -461,8 +473,7 @@ class GUI:
 
     def run(self) -> None:
         dpg.create_context()
-        dpg.create_viewport(
-            title="ao3d")
+        dpg.create_viewport(title="ao3d")
         dpg.setup_dearpygui()
         self._make_gui()
         dpg.set_primary_window("primary_window", True)

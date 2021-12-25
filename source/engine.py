@@ -40,113 +40,13 @@ class Engine:
 
         # Set default configuration values
         self.session = GuestSession()
-        self.config = Configuration()
+        self.config = Configuration(self.base_dir / constants.CONFIGURATION_FILE)
 
-    # TODO: refactor and move this to configuration.py
-    def write_configuration_file(self, config: Configuration) -> int:
-        try:
-            configuration_file = self.base_dir / constants.CONFIGURATION_FILE
-            LOG.info(f"Writing configuration to: {configuration_file.resolve()}")
-            with open(configuration_file, "w") as f:
-                f.write(
-                    constants.CONFIGURATION_FILE_TEMPLATE.format(
-                        config.username,
-                        config.password,
-                        config.downloads_dir,
-                        config.filetype,
-                        int(config.should_use_threading),
-                        config.concurrency_limit,
-                        int(config.should_rate_limit),
-                    )
-                )
-            LOG.info("Successfully wrote configuration file.")
-            return 0
-        except Exception:
-            return 1
+        if self.config.username and self.config.password:
+            self.login(self.config.username, self.config.password)
 
-    # TODO: refactor and move this to configuration.py
-    def parse_configuration_file(self) -> None:
-        configuration_file = self.base_dir / constants.CONFIGURATION_FILE
-        if not configuration_file.is_file():
-            LOG.info("No configuration file found, creating a default configuration.")
-            self.write_configuration_file(self.config)
-            return
-
-        LOG.info(
-            f"Found existing configuration file at: " f"{configuration_file.resolve()}"
-        )
-
-        parsed_config = configparser.ConfigParser()
-        parsed_config.read(configuration_file)
-
-        if (
-            "credentials" in parsed_config
-            and "username" in parsed_config["credentials"]
-        ):
-            self.config.username = parsed_config["credentials"]["username"]
-
-        if (
-            "credentials" in parsed_config
-            and "password" in parsed_config["credentials"]
-        ):
-            self.config.password = parsed_config["credentials"]["password"]
-
-        if "downloads" in parsed_config and "directory" in parsed_config["downloads"]:
-            self.config.downloads_dir = Path(parsed_config["downloads"]["directory"])
-
-        if "downloads" in parsed_config and "filetype" in parsed_config["downloads"]:
-            filetype = parsed_config["downloads"]["filetype"].upper()
-            try:
-                assert filetype.upper() in constants.VALID_FILETYPES
-                self.config.filetype = filetype
-            except Exception:
-                valid_filetypes_string = ", ".join(constants.VALID_FILETYPES)
-                LOG.error(
-                    f"Invalid filetype specified in {configuration_file}, "
-                    f"valid types are: {valid_filetypes_string}. Using default "
-                    f"filetype value of {constants.DEFAULT_DOWNLOADS_FILETYPE} "
-                    f"instead."
-                )
-
-        if (
-            "engine" in parsed_config
-            and "should_use_threading" in parsed_config["engine"]
-        ):
-            try:
-                self.config.should_use_threading = bool(
-                    int(parsed_config["engine"]["should_use_threading"])
-                )
-            except Exception:
-                LOG.error(
-                    f"Invalid value specified for "
-                    f"engine:should_use_threading, must be 0 or 1."
-                )
-
-        if "engine" in parsed_config and "concurrency_limit" in parsed_config["engine"]:
-            concurrency_limit = parsed_config["engine"]["concurrency_limit"]
-            try:
-                self.config.concurrency_limit = int(concurrency_limit)
-                assert self.config.concurrency_limit > 0
-            except Exception:
-                LOG.error(
-                    f"Invalid value {concurrency_limit} specified for "
-                    f"concurrency limit, must be an integer >= 1. Using "
-                    f"default value of {constants.DEFAULT_CONCURRENCY_LIMIT} "
-                    f"instead."
-                )
-
-        if "engine" in parsed_config and "should_rate_limit" in parsed_config["engine"]:
-            try:
-                self.config.should_rate_limit = bool(
-                    int(parsed_config["engine"]["should_rate_limit"])
-                )
-            except Exception:
-                LOG.error(
-                    f"Invalid value specified for "
-                    f"engine:should_rate_limit, must be 0 or 1."
-                )
-
-        LOG.info(f"Done parsing existing configuration.")
+        if self.config.should_rate_limit:
+            AO3.utils.limit_requests()
 
     def login(self, username: str, password: str) -> int:
         try:
@@ -169,6 +69,26 @@ class Engine:
         except Exception:
             LOG.error("Error logging out.")
             return 1
+
+    def update_settings(
+        self,
+        username: str,
+        password: str,
+        downloads_dir: Path,
+        filetype: str,
+        should_use_threading: bool,
+        concurrency_limit: int,
+        should_rate_limit: bool,
+    ) -> int:
+        self.config.username = username
+        self.config.password = password
+        self.config.downloads_dir = downloads_dir
+        self.config.filetype = filetype
+        self.config.should_use_threading = should_use_threading
+        self.config.concurrency_limit = concurrency_limit
+        self.config.should_rate_limit = should_rate_limit
+
+        return self.config.write_to_file()
 
     def is_authed(self) -> bool:
         return self.session.is_authed
