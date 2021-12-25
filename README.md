@@ -1,5 +1,15 @@
 # ao3d
-Utility for downloading works from [AO3](https://archiveofourown.org/) (Archive Of Our Own)
+<img src="https://user-images.githubusercontent.com/96564770/147376353-47423c0c-55cd-4426-96fc-7acff20ed21b.png" alt="screenshot" width="600">
+
+[video preview](https://imgur.com/a/mhInPfK)
+
+A small graphical utility for batch downloading works from [AO3](https://archiveofourown.org/) (Archive Of Our Own)
+
+### Features
+* Batch downloading works to supported formats (AZW3, EPUB, HTML, 
+MOBI, PDF)
+* Importing and downloading all bookmarks in an account
+
 
 ## Installation
 **Requirements**: [Python](https://www.python.org/) >= 3.8 (with the [pip](https://pypi.org/project/pip/) package manager)
@@ -13,46 +23,23 @@ $ git clone https://github.com/fIux-dev/ao3d.git
 $ cd ao3d
 $ pip install -r requirements.txt
 ```
-3. Copy `settings.ini.example` to `settings.ini` in the `ao3d` directory, enter
-your AO3 credentials and uncomment the lines (remove the semicolon at the start
-of the lines) in the copied settings file:
-```
-[credentials]
-username=<your AO3 username>
-password=<your AO3 password>
-```
-4. Run.
+3. Run.
 ```
 $ python3 ao3d.py
 ```
 
 ## Usage
-When run, ao3d will download all bookmarked works for the account. In addition, it will hash 
-the chapters titles and texts on disk, so that the next time it is run, it will only attempt
-to download works that have had their content changed since the last run.
+Please see the [video preview](https://imgur.com/a/mhInPfK) for an example of how to interact with the utility.
+It is not required to log in to download works, however some functionality may be restricted.
 
-By default, downloaded files will be in the `download` subdirectory in the `ao3d` directory,
-and the default filetype for downloads is PDF. A custom download location and filetype can be 
-specified in settings.ini.
-
-ao3d saves all its data to the `data` subdirectory in the `ao3d` folder. If you want the tool
-to forget any data associated with previous runs, simply delete this subdirectory. It will be
-regenerated on the next run.
-
-For more information about the configuration file (settings.ini), please read the comments in
-that file.
-
-
-## Features
-* Mult-threaded downloading of bookmarks to supported formats (AZW3, EPUB, HTML, 
-MOBI, PDF)
-
-## Tested
-* On Ubuntu and Windows
+Certain works may be restricted to logged-in users and cannot be viewed in a guest session. In addition, bookmarks
+can only be imported when logged in.
 
 ## Known issues
-* Right now bookmarked series cannot be downloaded. A workaround is to bookmark each 
+* Multithreading is *not* supported yet. The options in the settings do not affect any functionality.
+* Bookmarked series cannot be downloaded. A workaround is to bookmark each 
 work in the series individually.
+* If you have a lot of bookmarks and/or works, the downloader will likely be rate limited by AO3.
 
 ## License
 
