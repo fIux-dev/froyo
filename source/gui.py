@@ -590,8 +590,7 @@ class GUI:
                 dpg.add_spacer(width=50)
                 dpg.add_text(tag="add_works_status_text", show=False)
             dpg.add_spacer(tag="works_group_spacer")
-            dpg.add_child_window(tag="works_window", autosize_x=True, height=620)
-            dpg.add_spacer(height=20)
+            dpg.add_child_window(tag="works_window", autosize_x=True, height=610)
             with dpg.child_window(
                 tag="downloads_footer", border=False, autosize_x=True, autosize_y=True
             ):
@@ -709,7 +708,7 @@ class GUI:
     def run(self) -> None:
         """Starts the GUI."""
         dpg.create_context()
-        dpg.create_viewport(title="ao3d")
+        dpg.create_viewport(title="ao3d", width=1280, height=800)
         dpg.setup_dearpygui()
         self._make_gui()
         dpg.set_primary_window("primary_window", True)
