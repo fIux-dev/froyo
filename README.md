@@ -67,6 +67,7 @@ A `log.txt` file is generated in the same directory as the application when it i
 or errors, please create an issue and attach this log file.
 
 ## Known issues
+* A black screen is shown for a bit when the application first starts. This is due to font loading taking a while.
 * UI features (most buttons) will not work while there are pending requests, particularly if the rate limit is hit.
 Most buttons will just be nonresponsive or behave in an undefined way.
 * Bookmarked series cannot be downloaded yet. A workaround is to bookmark each 
