@@ -21,14 +21,13 @@ logging.basicConfig(
 
 def main() -> None:
     LOG.info("Starting...")
+    engine = None
     try:
         engine = Engine(os.getcwd())
-        gui = GUI(engine)
-        gui.run()
     except AO3.utils.HTTPError:
         LOG.error("Hit rate limiting error. Please try again later.")
-        gui_module.display_rate_limiting_error()
-        exit(1)
+    gui = GUI(engine)
+    gui.run()
 
 
 if __name__ == "__main__":

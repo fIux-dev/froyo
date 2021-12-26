@@ -12,25 +12,13 @@ from .configuration import Configuration
 LOG = logging.getLogger(__name__)
 
 
-def display_rate_limiting_error():
-    dpg.create_context()
-    dpg.create_viewport(title="Error", width=200, height=100, resizable=False)
-    dpg.setup_dearpygui()
-    with dpg.window(label="ao3d", tag="primary_window"):
-        dpg.add_text("Hit rate limit :(\nPlease try again later.")
-    dpg.show_viewport()
-    dpg.set_primary_window("primary_window", True)
-    dpg.start_dearpygui()
-    dpg.destroy_context()
-
-
 class GUI:
-    engine: Engine
+    engine: Optional[Engine] = None
 
     _work_ids: Set[int]
     _downloaded: Set[int]
 
-    def __init__(self, engine: Engine):
+    def __init__(self, engine: Engine = None):
         self.engine = engine
         self._work_ids = set()
         self._downloaded = set()
@@ -471,7 +459,7 @@ class GUI:
         """Create the layout for the settings tab."""
         with dpg.tab(label="Settings", tag="settings_tab"):
             with dpg.child_window(
-                tag="settings_child_window", width=500, height=410,
+                tag="settings_child_window", width=600, height=600,
             ):
                 with dpg.group(tag="login_settings_group"):
                     dpg.add_text("AO3 Login", tag="login_settings_text")
@@ -666,14 +654,14 @@ class GUI:
             return
 
         with dpg.child_window(
-            tag=window_tag, parent="works_window", autosize_x=True, height=60
+            tag=window_tag, parent="works_window", autosize_x=True, height=70
         ):
             with dpg.group(tag=f"{work_id}_group", horizontal=True):
                 dpg.add_button(
                     label="X",
                     tag=f"{work_id}_remove_button",
-                    width=40,
-                    height=40,
+                    width=50,
+                    height=50,
                     callback=self._remove_work_item,
                     user_data={"work_id": work_id},
                     show=False,
@@ -683,8 +671,8 @@ class GUI:
                 dpg.add_button(
                     label="Open",
                     tag=f"{work_id}_open_button",
-                    width=40,
-                    height=40,
+                    width=50,
+                    height=50,
                     callback=self._open_file,
                     show=False,
                     enabled=False,
@@ -722,13 +710,31 @@ class GUI:
                             dpg.add_text(tag=f"{work_id}_date_edited")
                             dpg.add_spacer(width=60)
 
+    def _make_error_window(self):
+        with dpg.window(label="ao3d", tag="primary_window"):
+            dpg.add_text("Hit rate limit :(\nPlease try again later.")
+        dpg.configure_viewport("ao3d", width=200, height=100, resizable=False)
+
+    def _setup_fonts(self) -> None:
+        with dpg.font_registry():
+            with dpg.font("resources/fonts/unifont-14.0.01.ttf", 16) as unifont:
+                dpg.add_font_range(0x0080, 0x10FFFD)
+        dpg.bind_font(unifont)
+
     def run(self) -> None:
         """Starts the GUI."""
         dpg.create_context()
+        self._setup_fonts()
+
         dpg.create_viewport(title="ao3d", width=1280, height=800)
         dpg.setup_dearpygui()
-        self._make_gui()
+        
+        if self.engine:
+            self._make_gui()
+        else:
+            self._make_error_window()
         dpg.set_primary_window("primary_window", True)
+
         dpg.show_viewport()
         dpg.start_dearpygui()
         dpg.destroy_context()

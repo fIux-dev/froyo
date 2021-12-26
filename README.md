@@ -75,7 +75,6 @@ work in the series individually.
 attempt to retry the request after some timeout, doubling the wait time each time until the request
 succeeds. In theory, this means as long as you leave the application open, it should complete the requests eventually,
 it might just take a while.
-* Non-alphanumeric characters render as `?` right now due to the default font being used.
 * Closing the application while downloads are ongoing can take a while to respond if not initiated from the command line.
 
 ## License

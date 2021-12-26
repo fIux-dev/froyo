@@ -133,3 +133,4 @@ settings.ini
 log.txt
 data/
 downloads/
+*.Zone.Identifier
