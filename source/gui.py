@@ -229,7 +229,7 @@ class GUI:
         dpg.configure_item(f"{work_id}_loading", show=show_loading)
         dpg.configure_item(f"{work_id}_remove_button", show=not show_loading)
 
-    def _toggle_all_buttons_enabled(self, enabled=False) -> None:
+    def _toggle_remove_buttons(self, enabled=False) -> None:
         """Toggle whether the open/close buttons are enabled an a work.
 
         Disable the buttons while a request for the work is ongoing.
@@ -242,8 +242,6 @@ class GUI:
         """
         dpg.configure_item("download_button", enabled=enabled)
         dpg.configure_item("remove_all_button", enabled=enabled)
-        dpg.configure_item("add_works_button", enabled=enabled)
-        dpg.configure_item("add_bookmarks_button", enabled=enabled)
 
         for work_id in self._work_ids:
             if dpg.does_item_exist(f"{work_id}_window"):
@@ -328,20 +326,37 @@ class GUI:
         dpg.set_item_user_data(f"{work_id}_open_button", {"path": data["path"]})
         self._downloaded.add(work_id)
 
-    def _show_urls_dialog(self, sender=None, data=None) -> None:
-        """Callback for when certain 'add works' buttons are clicked.
+    def _show_user_input_dialog(self, sender=None, data=None, user_data=None) -> None:
+        """Callback for when certain 'add <foo>' buttons are clicked.
 
         Displays a small popup window with a multiline textbox where users can
-        enter URLs.
+        enter text.
         """
-        add_type = ""
-        if sender == "add_works_button":
-            add_type = "works"
-        elif sender == "add_series_button":
-            add_type = "series"
-        dpg.configure_item("urls_dialog", label=f"Add {add_type.title()}", show=True)
-        dpg.set_item_user_data("submit_urls_button", {"add_type": add_type})
-        dpg.set_value("urls_input", "")
+        if dpg.does_item_exist("user_input_dialog"):
+            dpg.delete_item("user_input_dialog")
+
+        with dpg.window(
+            label=f"Add {user_data['add_type']}",
+            tag="user_input_dialog",
+            width=600,
+            height=300,
+            pos=(
+                (dpg.get_viewport_width() - 600) // 2,
+                (dpg.get_viewport_height() - 300) // 2,
+            ),
+        ):
+            dpg.add_text(
+                f"Enter {user_data['input_type']} on a new line each:",
+                tag="user_input_dialog_text",
+            )
+            dpg.add_input_text(tag="user_input", multiline=True, width=580, height=200)
+            dpg.add_button(
+                label="OK",
+                tag="submit_user_input_button",
+                small=True,
+                callback=self._submit_user_input,
+                user_data=user_data,
+            )
 
     def _load_works(self, work_ids: Set[int]) -> None:
         """Common function for loading a bunch of work IDs.
@@ -349,7 +364,7 @@ class GUI:
         Will show the placeholder items, try to load the works and display
         status messages as necessary.
         """
-        self._toggle_all_buttons_enabled(enabled=False)
+        self._toggle_remove_buttons(enabled=False)
         dpg.configure_item("add_works_status_text", color=(255, 255, 0), show=True)
 
         dpg.set_value("add_works_status_text", f"Loading {len(work_ids)} works...")
@@ -367,33 +382,39 @@ class GUI:
             dpg.configure_item("download_status_text", show=False)
         else:
             dpg.configure_item("add_works_status_text", show=False)
-        self._toggle_all_buttons_enabled(enabled=True)
+        self._toggle_remove_buttons(enabled=True)
 
-    def _add_urls(self, sender=None, data=None, user_data=None) -> None:
-        """Callback for when the OK button is clicked on the add works dialog.
+    def _submit_user_input(self, sender=None, data=None, user_data=None) -> None:
+        """Callback for when the OK button is clicked on the add dialog.
 
         This will call the appropriate function to load works depending on
         what the caller was.
         """
 
         # TODO: add an error message if some works in list couldn't be loaded
-        add_type = user_data["add_type"]
-        dpg.configure_item("urls_dialog", show=False)
-        urls = set(
+        items = set(
             filter(
-                None, [url.strip() for url in dpg.get_value("urls_input").split("\n")]
+                None, [line.strip() for line in dpg.get_value("user_input").split("\n")]
             )
         )
+        if dpg.does_item_exist("user_input_dialog"):
+            dpg.delete_item("user_input_dialog")
 
+        # TODO: generalize this to either work for all types of URLs, or support
+        # IDs or URLs in the list.
         work_ids = set()
+        add_type = user_data["add_type"]
         if add_type == "works":
-            work_ids = self.engine.work_urls_to_work_ids(urls)
+            work_ids = self.engine.work_urls_to_work_ids(items)
         elif add_type == "series":
-            # TODO: enable adding series
-            pass
+            work_ids = self.engine.series_urls_to_work_ids(items)
+        elif add_type == "user works":
+            work_ids = self.engine.usernames_to_work_ids(items)
+        elif add_type == "user bookmarks":
+            work_ids = self.engine.usernames_to_bookmark_ids(items)
         self._load_works(work_ids)
 
-    def _add_bookmarks(self, sender=None, data=None) -> None:
+    def _add_self_bookmarks(self, sender=None, data=None) -> None:
         """Callback for when the add bookmarks button is clicked.
 
         Calls the engine to get all bookmarks and attempt to load them all.
@@ -405,7 +426,7 @@ class GUI:
 
         dpg.configure_item("add_works_status_text", color=(255, 255, 0), show=True)
         dpg.set_value("add_works_status_text", "Getting bookmarks...")
-        bookmark_ids = self.engine.get_bookmark_ids()
+        bookmark_ids = self.engine.get_self_bookmark_ids()
         self._load_works(bookmark_ids)
 
     def _download_all(self, sender=None, data=None) -> None:
@@ -413,7 +434,7 @@ class GUI:
 
         Calls the engine to attempt download for all IDs staged right now.
         """
-        self._toggle_all_buttons_enabled(enabled=False)
+        self._toggle_remove_buttons(enabled=False)
         dpg.configure_item("download_status_text", color=(255, 255, 0), show=True)
         dpg.set_value(
             "download_status_text", f"Downloading {len(self._work_ids)} works..."
@@ -437,7 +458,7 @@ class GUI:
         dpg.set_value(
             "download_status_text", f"Finished downloading {len(self._work_ids)} works"
         )
-        self._toggle_all_buttons_enabled(enabled=True)
+        self._toggle_remove_buttons(enabled=True)
 
     def _make_gui(self) -> None:
         """Create the layout for the entire application."""
@@ -572,27 +593,44 @@ class GUI:
                 dpg.add_text("Add works to download: ", tag="add_works_text")
                 dpg.add_spacer(width=20)
                 dpg.add_button(
-                    label="Add works",
-                    tag="add_works_button",
-                    callback=self._show_urls_dialog,
-                )
-                # TODO: enable adding series
-                # dpg.add_button(
-                #     label="Add series",
-                #     tag="add_series_button",
-                #     callback=self._show_urls_dialog,
-                # )
-                dpg.add_button(
                     label="Add bookmarks",
                     tag="add_bookmarks_button",
-                    callback=self._add_bookmarks,
+                    callback=self._add_self_bookmarks,
+                )
+                dpg.add_button(
+                    label="Add works",
+                    tag="add_works_button",
+                    callback=self._show_user_input_dialog,
+                    user_data={"add_type": "works", "input_type": "URLs"},
+                )
+                dpg.add_button(
+                    label="Add series",
+                    tag="add_series_button",
+                    callback=self._show_user_input_dialog,
+                    user_data={"add_type": "series", "input_type": "URLs"},
+                )
+                dpg.add_button(
+                    label="Add user works",
+                    tag="add_user_works_button",
+                    callback=self._show_user_input_dialog,
+                    user_data={"add_type": "user works", "input_type": "usernames"},
+                )
+                dpg.add_button(
+                    label="Add user bookmarks",
+                    tag="add_user_bookmarks_button",
+                    callback=self._show_user_input_dialog,
+                    user_data={"add_type": "user bookmarks", "input_type": "usernames"},
                 )
                 dpg.add_spacer(width=50)
                 dpg.add_text(tag="add_works_status_text", show=False)
             dpg.add_spacer(tag="works_group_spacer")
             dpg.add_child_window(tag="works_window", autosize_x=True, height=610)
             with dpg.child_window(
-                tag="downloads_footer", border=False, autosize_x=True, autosize_y=True
+                tag="downloads_footer",
+                border=False,
+                autosize_x=True,
+                autosize_y=True,
+                no_scrollbar=True,
             ):
                 with dpg.group(tag="downloads_footer_group", horizontal=True):
                     dpg.add_button(
@@ -613,27 +651,6 @@ class GUI:
                     with dpg.group(tag="downloads_footer_text_group"):
                         dpg.add_spacer(height=12)
                         dpg.add_text(tag="download_status_text", show=False)
-            with dpg.window(
-                label="Add URLs",
-                tag="urls_dialog",
-                width=600,
-                height=300,
-                pos=(
-                    (dpg.get_viewport_width() - 600) // 2,
-                    (dpg.get_viewport_height() - 300) // 2,
-                ),
-                show=False,
-            ):
-                dpg.add_text("Enter URLs on a new line each:", tag="urls_dialog_text")
-                dpg.add_input_text(
-                    tag="urls_input", multiline=True, width=580, height=200
-                )
-                dpg.add_button(
-                    label="OK",
-                    tag="submit_urls_button",
-                    small=True,
-                    callback=self._add_urls,
-                )
 
     def _show_placeholder_work_item(self, work_id: int) -> None:
         """Shows the default placeholder item for a work.

@@ -41,7 +41,9 @@ filetype={}
 [engine]
 ; This section controls settings for how the tool behaves.
 ; Threading enables multiple downloads to occur concurrently in different CPU
-; threads. This will make bulk downloading a lot faster.
+; threads. This will make bulk downloading a lot faster. The concurrency limit
+; controls how many simultaneous requests can be running at the same time.
+; Rate limiting will limit the number of requests to AO3 to 12 per minute.
 should_use_threading={}
 concurrency_limit={}
 should_rate_limit={}

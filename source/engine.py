@@ -5,12 +5,12 @@ import sys
 import time
 
 from pathlib import Path
-from AO3 import GuestSession, Session, Work
+from AO3 import GuestSession, Series, Session, User, Work
 from slugify import slugify
 from threading import Semaphore
 from typing import Any, Callable, Dict, List, Optional, Set
 
-from . import constants
+from . import constants, utils
 from .configuration import Configuration
 
 LOG = logging.getLogger(__name__)
@@ -114,11 +114,80 @@ class Engine:
                 work_id = AO3.utils.workid_from_url(url)
                 if work_id:
                     ids.add(work_id)
+                else:
+                    LOG.error(f"{url} was not a valid work URL, skipping.")
             except Exception as e:
-                LOG.error(f"Error getting work id from URL {url}: {e}. " f"Skipping.")
+                LOG.error(f"Error getting work id from URL {url}: {e}. Skipping.")
         return ids
 
-    def get_bookmark_ids(self) -> Set[int]:
+    def series_urls_to_work_ids(self, urls: Set[str]) -> Set[int]:
+        ids = set()
+        for url in urls:
+            try:
+                series_id = utils.series_id_from_url(url)
+                if series_id:
+                    series = Series(series_id)
+                    for work in series.work_list:
+                        if work.id not in self._works:
+                            self._works[work.id] = work
+                            ids.add(work.id)
+                        else:
+                            LOG.info(
+                                f"Work {work.id} from series {series_id} was already loaded, "
+                                f"skipping."
+                            )
+                else:
+                    LOG.error(f"{url} was not a valid series URL, skipping.")
+            except Exception as e:
+                LOG.error(
+                    f"Error getting work list for series URL {url}: {e}. Skipping."
+                )
+        return ids
+
+    def usernames_to_work_ids(self, usernames: Set[str]) -> Set[int]:
+        ids = set()
+        for username in usernames:
+            try:
+                user = User(username)
+                works = user.get_works(use_threading=self.config.should_use_threading)
+                for work in works:
+                    if work.id not in self._works:
+                        self._works[work.id] = work
+                        ids.add(work.id)
+                    else:
+                        LOG.info(
+                            f"Work id {work.id} by user {username} was already loaded, "
+                            f"skipping."
+                        )
+            except Exception as e:
+                LOG.error(f"Error getting works by user: {username}: {e}. Skipping.")
+        return ids
+
+    def usernames_to_bookmark_ids(self, usernames: Set[str]) -> Set[int]:
+        ids = set()
+        for username in usernames:
+            try:
+                user = User(username)
+                # Necessary because this API call can throw
+                bookmarks = user.get_bookmarks(
+                    use_threading=self.config.should_use_threading
+                )
+                for work in bookmarks:
+                    if work.id not in self._works:
+                        self._works[work.id] = work
+                        ids.add(work.id)
+                    else:
+                        LOG.info(
+                            f"Bookmark id {work.id} by user {username} was already loaded, "
+                            f"skipping."
+                        )
+            except Exception as e:
+                LOG.error(
+                    f"Error getting bookmarks for user: {username}: {e}. Skipping."
+                )
+        return ids
+
+    def get_self_bookmark_ids(self) -> Set[int]:
         LOG.info("Loading bookmarked works...")
         # TODO: send PR to AO3 API to make this work for series bookmarks
         ids = set()
@@ -145,7 +214,7 @@ class Engine:
             work = Work(work_id, load=False)
             work.set_session(self.session)
             # TODO: determine whether load_chapters=False is useful here.
-            work.reload()
+            work.reload(load_chapters=False)
             LOG.info(f"Loaded work id {work.id}.")
             self._works[work.id] = work
         except AttributeError:
@@ -167,8 +236,8 @@ class Engine:
         work_id: int,
         callback: Callable[[int, Dict[str, Any], Optional[str]], None],
     ) -> None:
+        wait_time = constants.INITIAL_WAIT_TIME_IN_SECONDS
         while True:
-            wait_time = constants.INITIAL_WAIT_TIME_IN_SECONDS
             self._acquire_semaphore()
             try:
                 self._load_work_with_current_session(work_id)
@@ -222,8 +291,8 @@ class Engine:
             callback(work_id, data={"path": self._downloaded[work_id]})
             return
 
+        wait_time = constants.INITIAL_WAIT_TIME_IN_SECONDS
         while True:
-            wait_time = constants.INITIAL_WAIT_TIME_IN_SECONDS
             self._acquire_semaphore()
             try:
                 work = self._works[work_id]
