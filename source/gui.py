@@ -415,7 +415,9 @@ class GUI:
         """
         self._toggle_all_buttons_enabled(enabled=False)
         dpg.configure_item("download_status_text", color=(255, 255, 0), show=True)
-        dpg.set_value("download_status_text", f"Downloading {len(self._work_ids)} works...")
+        dpg.set_value(
+            "download_status_text", f"Downloading {len(self._work_ids)} works..."
+        )
 
         for work_id in self._work_ids:
             self._show_placeholder_work_item(work_id)
@@ -560,7 +562,7 @@ class GUI:
                         tag="reset_settings_button",
                         callback=self._reset_settings,
                     )
-                    dpg.add_text("", tag="settings_status_text", show=False)
+                    dpg.add_text("", tag="settings_status_text", indent=200, show=False)
 
     def _make_downloads_tab(self) -> None:
         """Create the layout for the downloads tab."""
