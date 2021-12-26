@@ -31,17 +31,16 @@ class Configuration:
 
         self._filename = filename
         if not self._filename.is_file():
-            LOG.info(f"No existing configuration file found, "
-                f"writing default configuration to: {self._filename.resolve()}")
+            LOG.info(
+                f"No existing configuration file found, "
+                f"writing default configuration to: {self._filename.resolve()}"
+            )
             self.write_to_file()
-        else:
-            self.parse_from_file()
 
     def parse_from_file(self) -> int:
         try:
             LOG.info(
-                f"Found existing configuration file at: "
-                f"{self._filename.resolve()}"
+                f"Found existing configuration file at: " f"{self._filename.resolve()}"
             )
 
             parsed_config = configparser.ConfigParser()
@@ -59,10 +58,16 @@ class Configuration:
             ):
                 self.password = parsed_config["credentials"]["password"]
 
-            if "downloads" in parsed_config and "directory" in parsed_config["downloads"]:
+            if (
+                "downloads" in parsed_config
+                and "directory" in parsed_config["downloads"]
+            ):
                 self.downloads_dir = Path(parsed_config["downloads"]["directory"])
 
-            if "downloads" in parsed_config and "filetype" in parsed_config["downloads"]:
+            if (
+                "downloads" in parsed_config
+                and "filetype" in parsed_config["downloads"]
+            ):
                 filetype = parsed_config["downloads"]["filetype"].upper()
                 try:
                     assert filetype.upper() in constants.VALID_FILETYPES
@@ -90,7 +95,10 @@ class Configuration:
                         f"engine:should_use_threading, must be 0 or 1."
                     )
 
-            if "engine" in parsed_config and "concurrency_limit" in parsed_config["engine"]:
+            if (
+                "engine" in parsed_config
+                and "concurrency_limit" in parsed_config["engine"]
+            ):
                 concurrency_limit = parsed_config["engine"]["concurrency_limit"]
                 try:
                     self.concurrency_limit = int(concurrency_limit)
@@ -98,12 +106,15 @@ class Configuration:
                 except Exception:
                     LOG.error(
                         f"Invalid value {concurrency_limit} specified for "
-                        f"concurrency limit, must be an integer >= 1. Using "
+                        f"concurrency limit, must be an integer > 0. Using "
                         f"default value of {constants.DEFAULT_CONCURRENCY_LIMIT} "
                         f"instead."
                     )
 
-            if "engine" in parsed_config and "should_rate_limit" in parsed_config["engine"]:
+            if (
+                "engine" in parsed_config
+                and "should_rate_limit" in parsed_config["engine"]
+            ):
                 try:
                     self.should_rate_limit = bool(
                         int(parsed_config["engine"]["should_rate_limit"])
@@ -117,9 +128,11 @@ class Configuration:
             LOG.info(f"Done parsing existing configuration.")
             return 0
         except Exception as e:
-            LOG.error(f"Unhandled error while parsing configuration file "
+            LOG.error(
+                f"Unhandled error while parsing configuration file "
                 f"at {self._filename}: {e}. Default configuration will be "
-                "used.")
+                "used."
+            )
             return 1
 
     def write_to_file(self) -> int:
