@@ -39,6 +39,10 @@ It is not required to log in to download works, however some functionality may b
 restricted to logged-in users and cannot be viewed in a guest session. In addition, bookmarks can only be imported
 when logged in.
 
+It is advisable to keep browsing of AO3 through the browser to a minimum while using the application. This is because
+rate limiting is shared across all your connections. If you are being rate limited in the application, you will also
+see a "Retry later" message when trying to access AO3 in the browser.
+
 ### Settings
 
 <img src="https://user-images.githubusercontent.com/96564770/147402186-7a79905a-74cc-4d03-870a-56aa44ff2059.png" alt="screenshot" width="600">

@@ -12,7 +12,7 @@ from AO3 import GuestSession, Series, Session, User, Work
 from dataclasses import dataclass
 from slugify import slugify
 from threading import Lock, Semaphore, Thread, Timer
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from . import constants, utils
 from .configuration import Configuration
@@ -22,19 +22,28 @@ LOG = logging.getLogger(__name__)
 
 class Action(enum.Enum):
     _SENTINEL = 0
-    LOAD = 1
-    DOWNLOAD = 2
-    REMOVE = 3
+    LOAD_WORK = 1
+    DOWNLOAD_WORK = 2
+    LOAD_SERIES = 3
+    LOAD_USER_WORKS = 4
+    LOAD_USER_BOOKMARKS = 5
+
+
+class Status(enum.Enum):
+    OK = 0
+    ERROR = 1
+    RETRY = 2
 
 
 @dataclass
 class WorkItem:
     work: Work
     download_path: Optional[Path] = None
-    seconds_before_retry: int = constants.INITIAL_SECONDS_BEFORE_RETRY
 
 
-GUICallback = Callable[[int, Optional[WorkItem], Optional[str]], None]
+GUICallback = Callable[..., None]
+Args = List[Any]
+Kwargs = Dict[str, Any]
 
 
 class Engine:
@@ -44,22 +53,25 @@ class Engine:
 
     _queue: Queue
     _items: Dict[int, WorkItem] = {}
-    _items_lock: Lock
     _active_ids: Set[int] = set()
-    _active_ids_lock: Lock
-
     _threads: List[Thread] = []
     _retries: Dict[int, Timer] = {}
 
-    _before_work_load: Optional[GUICallback] = None
-    _after_work_load: Optional[GUICallback] = None
-    _before_work_download: Optional[GUICallback] = None
-    _after_work_download: Optional[GUICallback] = None
+    _time_before_retry = constants.INITIAL_SECONDS_BEFORE_RETRY
+
+    _items_lock: Lock
+    _active_ids_lock: Lock
+    _retry_lock: Lock
+
+    _callbacks: Dict[Action, Tuple[GUICallback, GUICallback]]
 
     def __init__(self, cwd: str):
         self._queue = Queue()
+        self._callbacks = {action: (None, None) for action in Action}
+
         self._items_lock = Lock()
         self._active_ids_lock = Lock()
+        self._retry_lock = Lock()
 
         self.base_dir = Path(cwd)
         LOG.info(f"Current working directory: {self.base_dir}")
@@ -68,24 +80,26 @@ class Engine:
         data_dir = self.base_dir / constants.DATA_DIR
         data_dir.mkdir(parents=True, exist_ok=True)
 
-        # Set default configuration values
+        # Create default configuration, but load settings from file if it exists
         self.session = GuestSession()
         self.config = Configuration(self.base_dir / constants.CONFIGURATION_FILE)
         self.get_settings()
 
+        # Login if the loaded settings populated these fields
         if self.config.username and self.config.password:
             self.login(self.config.username, self.config.password)
 
         if self.config.should_rate_limit:
             AO3.utils.limit_requests()
 
+        # Initialize worker threads
         n_workers = 1
         if self.config.should_use_threading and self.config.concurrency_limit > 1:
             n_workers = self.config.concurrency_limit
         self._init_worker_threads(n_workers)
 
     # Initialization functions
-    def _init_worker_threads(self, n_workers: int):
+    def _init_worker_threads(self, n_workers: int) -> None:
         """Creates a thread pool of workers.
 
         These run separately from the main thread to parallelize sending
@@ -96,33 +110,24 @@ class Engine:
             thread.start()
             self._threads.append(thread)
 
-    def set_before_work_load(self, f: GUICallback):
-        """To be called by the GUI during its initialization.
+    # Functions for interacting with GUI callbacks
+    def set_callbacks(
+        self, callbacks: Dict[Action, Tuple[GUICallback, GUICallback]]
+    ) -> None:
+        """Sets the callbacks (before, after) for each action."""
+        self._callbacks.update(callbacks)
 
-        Sets a GUI function to be run before any work is loaded.
-        """
-        self._before_work_load = f
+    def _run_before_action(self, action: Action, args: Args = [], kwargs: Kwargs = {}) -> None:
+        """If a callback is registered to be run before the action, run it."""
+        before_action = self._callbacks[action][0]
+        if before_action:
+            before_action(*args, **kwargs)
 
-    def set_after_work_load(self, f: GUICallback):
-        """To be called by the GUI during its initialization.
-
-        Sets a GUI function to be run after any work is done loading.
-        """
-        self._after_work_load = f
-
-    def set_before_work_download(self, f: GUICallback):
-        """To be called by the GUI during its initialization.
-
-        Sets a GUI function to be run before any work is downloaded.
-        """
-        self._before_work_download = f
-
-    def set_after_work_download(self, f: GUICallback):
-        """To be called by the GUI during its initialization.
-
-        Sets a GUI function to be run before any work is down downloading.
-        """
-        self._after_work_download = f
+    def _run_after_action(self, action: Action, args: Args = [], kwargs: Kwargs = {}) -> None:
+        """If a callback is registered to be run after the action, run it."""
+        after_action = self._callbacks[action][1]
+        if after_action:
+            after_action(*args, **kwargs)
 
     # Public API to be called from the GUI
     def login(self, username: str, password: str) -> int:
@@ -194,35 +199,42 @@ class Engine:
         if work_id in self._items:
             del self._items[work_id]
         self._items_lock.release()
+        for action in Action:
+            self._cancel_retries(work_id, action)
+
 
     def remove_all(self) -> bool:
-        """Remove all IDs from the active IDs set."""
+        """Remove all IDs from the active IDs set.
+
+        The removal functions are CPU bound so it's okay to be non-async here.
+        """
         self._active_ids_lock.acquire()
         self._active_ids.clear()
         self._active_ids_lock.release()
         self._items_lock.acquire()
         self._items.clear()
         self._items_lock.release()
+        self._cancel_all_retries()
 
     def load_work(self, work_id: int) -> None:
         """Wrapper for enqueuing a load action."""
-        self._enqueue_action(work_id, Action.LOAD)
+        self._enqueue_action(work_id, Action.LOAD_WORK)
 
     def load_works(self, work_ids: Set[int]) -> None:
         """Enqueue load actions for every ID in the active IDs set."""
         for work_id in work_ids:
-            self._enqueue_action(work_id, Action.LOAD)
+            self._enqueue_action(work_id, Action.LOAD_WORK)
 
     def download_work(self, work_id: int) -> None:
         """Wrapper for enqueueing a download action."""
         self._verify_download_directory_exists()
-        self._enqueue_action(work_id, Action.DOWNLOAD)
+        self._enqueue_action(work_id, Action.DOWNLOAD_WORK)
 
     def download_all(self) -> None:
         """Enqueues download actions for all work IDs in the active set."""
         self._verify_download_directory_exists()
         for work_id in self._active_ids:
-            self._enqueue_action(work_id, Action.DOWNLOAD)
+            self._enqueue_action(work_id, Action.DOWNLOAD_WORK)
 
     def stop(self) -> None:
         """Shuts down the engine cleanly.
@@ -234,10 +246,7 @@ class Engine:
         self.remove_all()
         for thread in self._threads:
             thread.join()
-        for _, threads in self._retries.items():
-            for thread in threads:
-                thread.cancel()
-                thread.join()
+        self._cancel_all_retries()
 
     # These functions return a list of work IDs from the inputs.
     # TODO: make these asynchronous with retry. Right now if we get rate limited
@@ -344,7 +353,7 @@ class Engine:
         return ids
 
     # Threading helper functions
-    def _enqueue_action(self, work_id: int, action: Action):
+    def _enqueue_action(self, work_id: int, action: Action) -> None:
         """Enqueues a value on the worker queue if the ID is active.
 
         This is locking because multiple threads can be accessing the active
@@ -355,7 +364,7 @@ class Engine:
         self._active_ids_lock.release()
         self._queue.put((work_id, action))
 
-    def _is_id_active(self, work_id):
+    def _is_id_active(self, work_id) -> bool:
         """Locking read of the active ID set.
     
         If an ID is not active, it may have been deleted by the user through
@@ -367,7 +376,19 @@ class Engine:
         self._active_ids_lock.release()
         return is_active
 
-    def _update_item(self, work_id: int, item: WorkItem):
+    def _get_work_item(self, work_id: int) -> Optional[WorkItem]:
+        """Updates the item cache with the provided value.
+
+        This requries acquiring the lock first in order to prevent corruption
+        of the active ID set, since many threads can be accessing it at the same
+        time.
+        """
+        self._items_lock.acquire()
+        work_item = self._items.get(work_id, None)
+        self._items_lock.release()
+        return work_item
+
+    def _set_work_item(self, work_id: int, item: WorkItem) -> None:
         """Updates the item cache with the provided value.
 
         This requries acquiring the lock first in order to prevent corruption
@@ -378,25 +399,53 @@ class Engine:
         self._items[work_id] = item
         self._items_lock.release()
 
-    def _cancel_retries(self, work_id: int, action: Action):
+    def _cancel_retries(self, work_id: int, action: Action) -> None:
         """Cancel all current threads attempting to retry this (work_id, action).
 
         Usually called when the action succeeds in another thread.
         """
-        if (work_id, action) not in self._retries:
+        key = (work_id, action)
+        self._retry_lock.acquire()
+        if key not in self._retries:
+            self._retry_lock.release()
             return
 
-        for thread in self._retries[(work_id, action)]:
-            if thread is threading.current_thread():
-                continue
-            else:
+        for thread in self._retries[key]:
+            thread.cancel()
+            thread.join()
+
+        del self._retries[(work_id, action)]
+        self._retry_lock.release()
+
+    def _cancel_all_retries(self) -> None:
+        """Cancel all retries."""
+        self._retry_lock.acquire()
+        while self._retries:
+            threads = self._retries.pop()
+            for thread in threads:
                 thread.cancel()
                 thread.join()
+        self._retry_lock.release()
 
-    def _retry(self, seconds_before_retry: int, work_id: int, action: Action):
+    def _get_seconds_before_retry(self, work_id: int, action: Action) -> int:
+        """Get the time in seconds to wait before retrying the action for the ID.
+
+        The wait time increases exponentially, doubling based on how many times
+        we have attempted to retry.
+        """
+        self._retry_lock.acquire()
+        n_retries = len(self._retries.get((work_id, action), []))
+        self._retry_lock.release()
+        retry_time = constants.INITIAL_SECONDS_BEFORE_RETRY * (1 << n_retries)
+        return retry_time
+
+    def _retry(self, work_id: int, action: Action, wait_time: int) -> None:
         """Spawn a new thread to enqueue the action again after some time.
         """
-        retry = Timer(seconds_before_retry, self._queue.put, args=((work_id, action),))
+        LOG.info(f"Retry {action.name} for work id {work_id} after {wait_time}s...")
+        self._retry_lock.acquire()
+
+        retry = Timer(wait_time, self._queue.put, args=((work_id, action),))
         retry.start()
 
         key = (work_id, action)
@@ -405,22 +454,49 @@ class Engine:
         else:
             self._retries[key] = [retry]
 
-    def _process_queue(self):
+        self._retry_lock.release()
+
+    def _process_queue(self) -> None:
         """Function run by worker threads.
 
         Will attempt to continually process the queue while there are pending
         items and perform those requests.
         """
         while True:
-            work_id, action = self._queue.get(block=True)
+            work_id, action = self._queue.get()
             if action == Action._SENTINEL:
-                # Exit
+                # Exit condition
                 self._queue.put((-1, Action._SENTINEL))
                 return
-            elif action == Action.LOAD:
-                self._load_work(work_id)
-            elif action == Action.DOWNLOAD:
-                self._download_work(work_id)
+
+            if not self._is_id_active(work_id):
+                # If the ID is not in the active set, this usually indicates
+                # that the user deleted the work through the UI. This means
+                # there is no longer a need to process this request.
+                continue
+
+            args = [work_id]
+            kwargs = {}
+            self._run_before_action(action, args=args)
+
+            if action == Action.LOAD_WORK:
+                status, kwargs = self._load_work(work_id)
+            elif action == Action.DOWNLOAD_WORK:
+                status, kwargs = self._download_work(work_id)
+
+            if not self._is_id_active(work_id):
+                # ID may have been removed since the processing was done.
+                # If so, there is no need to run the callback.
+                continue
+
+            if status == Status.RETRY:
+                wait_time = self._get_seconds_before_retry(work_id, action)
+                self._retry(work_id, action, wait_time)
+                kwargs["error"] = f"Hit rate limit, trying again in {wait_time}s..."
+            elif status == Status.OK:
+                self._cancel_retries(work_id, action)
+
+            self._run_after_action(action, args=args, kwargs=kwargs)
 
     def _reload_work_with_current_session(self, work: Work) -> None:
         """Function to be called from a worker thread.
@@ -437,49 +513,39 @@ class Engine:
             LOG.warning(f"Work {work.id} is only accessible to logged-in users.")
             raise AO3.utils.AuthError("Work is only accessible to logged-in users.")
 
-    def _load_work(self, work_id: int,) -> None:
+    def _load_work(
+        self, work_id: int
+    ) -> Tuple[Status, Kwargs]:
         """Function to be called from a worker thread.
 
         This will return the cached value if the work was determined to be
         already loaded, otherwise it will attempt to load work metadata, 
         retrying if a rate limit error occurs.
         """
-        if not self._is_id_active(work_id):
-            return
+        work_item = self._get_work_item(work_id) or WorkItem(
+            work=Work(work_id, load=False)
+        )
 
-        self._before_work_load(work_id)
-        work_item = self._items.get(work_id, WorkItem(work=Work(work_id, load=False)))
         if work_item.work.loaded:
             LOG.info(f"Work id {work_id} was already loaded, skipping.")
-            self._after_work_load(work_id, work_item)
-            return
+            return (Status.OK, {"work_item": work_item})
 
         try:
             self._reload_work_with_current_session(work_item.work)
-            self._after_work_load(work_id, work_item)
-            self._update_item(work_id, work_item)
-            self._cancel_retries(work_id, Action.LOAD)
+            self._set_work_item(work_id, work_item)
+            return (Status.OK, {"work_item": work_item})
         except AO3.utils.HTTPError:
             LOG.warning(
-                f"Hit rate limit trying to load work {work_id}, "
-                f"trying again in {work_item.seconds_before_retry}s."
+                f"Hit rate limit trying to load work {work_id}. Attempting to retry..."
             )
-            # TODO: make this a decorator
-            self._retry(work_item.seconds_before_retry, work_item.work.id, Action.LOAD)
-            self._after_work_load(
-                work_id,
-                None,
-                error=(
-                    f"Hit rate limit, trying again in {work_item.seconds_before_retry}s..."
-                ),
-            )
-            work_item.seconds_before_retry *= 2
-            self._update_item(work_id, work_item)
+            return (Status.RETRY, {})
         except Exception as e:
             LOG.error(f"Error loading work id {work_id}: {e}")
-            self._after_work_load(work_id, None, error=str(e))
+            return (Status.ERROR, {"error": str(e)})
 
-    def _download_work(self, work_id: int,) -> None:
+    def _download_work(
+        self, work_id: int
+    ) -> Tuple[Status, Kwargs]:
         """Function to be called from a worker thread.
 
         Before downloading, the work must also be loaded if it is not already.
@@ -488,51 +554,37 @@ class Engine:
         already downloaded, otherwise it will attempt to download, retrying
         if a rate limit error occurs.
         """
-        if not self._is_id_active(work_id):
-            return
+        work_item = self._get_work_item(work_id) or WorkItem(
+            work=Work(work_id, load=False)
+        )
 
-        self._before_work_download(work_id)
-        work_item = self._items.get(work_id, WorkItem(work=Work(work_id, load=False)))
         if work_item.download_path and work_item.download_path.is_file():
             LOG.info(f"Work id {work_id} was already downloaded, skipping.")
-            self._after_work_download(work_id, work_item)
-            return
+            return (Status.OK, {"work_item": work_item})
 
         try:
             if not work_item.work.loaded:
-                self._before_work_load(work_id)
+                self._run_before_action(Action.LOAD_WORK, args=[work_id])
                 self._reload_work_with_current_session(work_item.work)
-                self._after_work_load(work_id, work_item)
+                self._run_after_action(
+                    Action.LOAD_WORK, args=[work_id], kwargs={"work_item": work_item}
+                )
             download_path = self._get_download_file_path(work_item.work)
             LOG.info(
                 f"Downloading {work_item.work.id} - {work_item.work.title} to: {download_path}"
             )
             work_item.work.download_to_file(download_path, self.config.filetype)
             work_item.download_path = download_path
-            self._after_work_download(work_id, work_item)
-            self._update_item(work_id, work_item)
-            self._cancel_retries(work_id, Action.DOWNLOAD)
+            self._set_work_item(work_id, work_item)
+            return (Status.OK, {"work_item": work_item})
         except AO3.utils.HTTPError:
             LOG.warning(
-                f"Hit rate limit trying to download work {work_id}, "
-                f"trying again in {work_item.seconds_before_retry}s."
+                f"Hit rate limit trying to download work {work_id}. Attempting to retry..."
             )
-            # TODO: make this a decorator
-            self._retry(
-                work_item.seconds_before_retry, work_item.work.id, Action.DOWNLOAD
-            )
-            self._after_work_download(
-                work_id,
-                None,
-                error=(
-                    f"Hit rate limit, trying again in {work_item.seconds_before_retry}s..."
-                ),
-            )
-            work_item.seconds_before_retry *= 2
-            self._update_item(work_id, work_item)
+            return (Status.RETRY, {})
         except Exception as e:
             LOG.error(f"Error downloading work id {work_id}: {e}")
-            self._after_work_download(work_id, None, error=str(e))
+            return (Status.ERROR, {"error": str(e)})
 
     # Utility functions
     def _get_download_file_path(self, work: Work) -> Path:

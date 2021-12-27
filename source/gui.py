@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Set, Tuple
 
 from . import constants, utils
-from .engine import Engine, WorkItem
+from .engine import Action, Engine, WorkItem
 from .configuration import Configuration
 
 LOG = logging.getLogger(__name__)
@@ -24,10 +24,18 @@ class GUI:
         self._downloaded = set()
 
         if engine:
-            self.engine.set_before_work_load(self._show_work_item_loading)
-            self.engine.set_after_work_load(self._update_work_item_after_load)
-            self.engine.set_before_work_download(self._show_work_item_downloading)
-            self.engine.set_after_work_download(self._update_work_item_after_download)
+            self.engine.set_callbacks(
+                {
+                    Action.LOAD_WORK: (
+                        self._show_work_item_loading,
+                        self._update_work_item_after_load,
+                    ),
+                    Action.DOWNLOAD_WORK: (
+                        self._show_work_item_downloading,
+                        self._update_work_item_after_download,
+                    ),
+                }
+            )
 
     def _set_status_text_conditionally(
         self,
@@ -201,7 +209,7 @@ class GUI:
             dpg.set_value(
                 f"{work_id}_status_text", f"Error opening file",
             )
-            dpg.configure_item(f"{work_id}_open_button", show=False)    
+            dpg.configure_item(f"{work_id}_open_button", show=False)
 
     def _remove_work_item(self, sender=None, data=None, user_data=None) -> None:
         """Callback for clicking the X button on a work.
@@ -280,7 +288,10 @@ class GUI:
         )
 
     def _update_work_item_after_load(
-        self, work_id: int, data: Optional[WorkItem] = None, error: Optional[str] = None
+        self,
+        work_id: int,
+        work_item: Optional[WorkItem] = None,
+        error: Optional[str] = None,
     ) -> None:
         """Callback to be called by the engine.
 
@@ -293,7 +304,7 @@ class GUI:
         if not dpg.does_item_exist(f"{work_id}_window"):
             return
 
-        if not data or error:
+        if not work_item or error:
             error = error or "unknown"
             dpg.configure_item(
                 # This is hacky. TODO: make this more robus
@@ -308,11 +319,14 @@ class GUI:
             return
 
         dpg.configure_item(f"{work_id}_loading", show=False)
-        self._update_work_item_metadata(work_id, data.work)
+        self._update_work_item_metadata(work_id, work_item.work)
         dpg.configure_item(f"{work_id}_status_group", show=False)
 
     def _update_work_item_after_download(
-        self, work_id: int, data: Optional[WorkItem] = None, error: Optional[str] = None
+        self,
+        work_id: int,
+        work_item: Optional[WorkItem] = None,
+        error: Optional[str] = None,
     ) -> None:
         """Callback to be called by the engine.
 
@@ -325,7 +339,7 @@ class GUI:
         if not dpg.does_item_exist(f"{work_id}_window"):
             return
 
-        if not (data and data.download_path) or error:
+        if not (work_item and work_item.download_path) or error:
             error = error or "unknown"
             dpg.configure_item(
                 # This is hacky. TODO: make this more robus
@@ -343,8 +357,13 @@ class GUI:
         dpg.configure_item(f"{work_id}_loading", show=False)
         dpg.configure_item(f"{work_id}_status_group", show=True)
         dpg.configure_item(f"{work_id}_status_text", color=(0, 255, 0))
-        dpg.set_value(f"{work_id}_status_text", f"Downloaded to: {data.download_path}")
-        dpg.set_item_user_data(f"{work_id}_open_button", {"work_id": work_id, "path": data.download_path})
+        dpg.set_value(
+            f"{work_id}_status_text", f"Downloaded to: {work_item.download_path}"
+        )
+        dpg.set_item_user_data(
+            f"{work_id}_open_button",
+            {"work_id": work_id, "path": work_item.download_path},
+        )
         dpg.configure_item(f"{work_id}_open_button", show=True)
 
     def _show_user_input_dialog(self, sender=None, data=None, user_data=None) -> None:
