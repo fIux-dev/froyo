@@ -28,6 +28,7 @@ def main() -> None:
         LOG.error("Hit rate limiting error. Please try again later.")
     gui = GUI(engine)
     gui.run()
+    logging.shutdown()
 
 
 if __name__ == "__main__":

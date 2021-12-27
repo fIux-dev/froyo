@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Set, Tuple
 
 from . import constants, utils
-from .engine import Engine
+from .engine import Engine, WorkItem
 from .configuration import Configuration
 
 LOG = logging.getLogger(__name__)
@@ -22,6 +22,12 @@ class GUI:
         self.engine = engine
         self._work_ids = set()
         self._downloaded = set()
+
+        if engine:
+            self.engine.set_before_work_load(self._show_work_item_loading)
+            self.engine.set_after_work_load(self._update_work_item_after_load)
+            self.engine.set_before_work_download(self._show_work_item_downloading)
+            self.engine.set_after_work_download(self._update_work_item_after_download)
 
     def _set_status_text_conditionally(
         self,
@@ -176,7 +182,26 @@ class GUI:
         Tries to open the destination of the downloaded file with the system
         default applications.
         """
-        utils.open_file(user_data["path"])
+        # TODO: add a message if file could not be opened
+        work_id = user_data["work_id"]
+        try:
+            utils.open_file(user_data["path"])
+        except FileNotFoundError as e:
+            LOG.error(f"Error opening {user_data['path']}: {e}")
+            if not dpg.does_item_exist(f"{work_id}_window"):
+                return
+            dpg.configure_item(f"{work_id}_status_text", color=(255, 0, 0))
+            dpg.set_value(
+                f"{work_id}_status_text", f"File was deleted or moved",
+            )
+            dpg.configure_item(f"{work_id}_open_button", show=False)
+        except Exception as e:
+            LOG.error(f"Error opening {user_data['path']}: {e}")
+            dpg.configure_item(f"{work_id}_status_text", color=(255, 0, 0))
+            dpg.set_value(
+                f"{work_id}_status_text", f"Error opening file",
+            )
+            dpg.configure_item(f"{work_id}_open_button", show=False)    
 
     def _remove_work_item(self, sender=None, data=None, user_data=None) -> None:
         """Callback for clicking the X button on a work.
@@ -184,88 +209,64 @@ class GUI:
         Remove this work from the UI and also tell the engine to remove it.
         """
         work_id = user_data["work_id"]
-        self.engine.remove(work_id)
-        if work_id in self._work_ids:
-            self._work_ids.remove(work_id)
-        if work_id in self._downloaded:
-            self._downloaded.remove(work_id)
-
         window_tag = f"{work_id}_window"
         if dpg.does_item_exist(window_tag):
             dpg.delete_item(window_tag)
+        self.engine.remove(work_id)
 
     def _remove_all(self, sender=None, data=None) -> None:
         """Callback for clicking the X button on a work.
 
         Remove all works currently staged.
         """
-        while self._work_ids:
-            work_id = self._work_ids.pop()
-            if work_id in self._downloaded:
-                self._downloaded.remove(work_id)
-            self.engine.remove(work_id)
-            window_tag = f"{work_id}_window"
-            if dpg.does_item_exist(window_tag):
-                dpg.delete_item(window_tag)
+        dpg.delete_item("works_window", children_only=True)
+        self.engine.remove_all()
 
-    def _toggle_loading_on_work(self, work_id: int, show_loading=False):
-        """Toggle the visibility of the loading indicator on a work.
+    def _show_work_item_downloading(self, work_id: int) -> None:
+        """Shows a work item as downloading.
 
-        When the loading indicator is visible, the remove/open buttons are
-        hidden.
+        This will hide the 'open' button and set the status text to indicate
+        that it is downloading.
         """
-        dpg.configure_item(f"{work_id}_loading", show=show_loading)
-        dpg.configure_item(f"{work_id}_remove_button", show=not show_loading)
-
-    def _toggle_remove_buttons(self, enabled=False) -> None:
-        """Toggle whether the open/close buttons are enabled an a work.
-
-        Disable the buttons while a request for the work is ongoing.
-        When the buttons are disabled, clicking them will have no effect.
-        This is to prevent corruption of internal state since there are
-        multiple threads trying to modify these containers at the same time.
-        These buttons will be reenabled in the callbacks when the request
-        completes.
-        TODO: make this not necessary.
-        """
-        dpg.configure_item("download_button", enabled=enabled)
-        dpg.configure_item("remove_all_button", enabled=enabled)
-
-        for work_id in self._work_ids:
-            if dpg.does_item_exist(f"{work_id}_window"):
-                dpg.configure_item(f"{work_id}_remove_button", enabled=enabled)
-                dpg.configure_item(f"{work_id}_open_button", enabled=enabled)
-
-    def _update_work_item_after_load(
-        self,
-        work_id: int,
-        data: Dict[str, Any] = {},
-        error_message: Optional[str] = None,
-    ) -> None:
-        """Callback to be called by the engine.
-
-        When the engine completes loading of a work (which may be in another 
-        thread), this function will be called to update the placeholder item
-        with the real work metadata.
-
-        If an error occurs, an error message will be printed.
-        """
-        if error_message:
-            self._toggle_loading_on_work(
-                work_id, show_loading=data.get("show_loading", False)
-            )
-            dpg.configure_item(f"{work_id}_title", color=(255, 0, 0), show=True)
-            dpg.set_value(f"{work_id}_title", error_message)
-            dpg.configure_item(f"{work_id}_content_group", show=True)
-            dpg.configure_item(f"{work_id}_metadata_group", show=False)
+        window_tag = f"{work_id}_window"
+        if not dpg.does_item_exist(window_tag):
             return
 
-        # TODO: update fonts to render properly
-        work = data["work"]
-        self._toggle_loading_on_work(work_id, show_loading=False)
-        dpg.configure_item(f"{work_id}_content_group", show=True)
+        dpg.configure_item(f"{work_id}_loading", show=True)
+        dpg.configure_item(f"{work_id}_open_button", show=False)
+        dpg.configure_item(f"{work_id}_status_group", show=True)
+        dpg.configure_item(f"{work_id}_status_text", color=(255, 255, 0))
+        dpg.set_value(
+            f"{work_id}_status_text", f"Downloading...",
+        )
+
+    def _show_work_item_loading(self, work_id: int) -> None:
+        """Shows a work item as loading.
+
+        This will create a UI element for the work if it does not already exist
+        or simply show/hide the sub-elements and disable the buttons if the
+        element already exists.
+        """
+        window_tag = f"{work_id}_window"
+        if not dpg.does_item_exist(window_tag):
+            return
+
+        dpg.configure_item(f"{work_id}_loading", show=True)
+        dpg.configure_item(f"{work_id}_title_group", show=False)
+        dpg.configure_item(f"{work_id}_metadata_group", show=False)
+        dpg.configure_item(f"{work_id}_status_group", show=True)
+        dpg.configure_item(f"{work_id}_status_text", color=(255, 255, 0), show=True)
+        dpg.set_value(
+            f"{work_id}_status_text", f"Loading...",
+        )
+
+    def _update_work_item_metadata(self, work_id: int, work: Work) -> None:
+        """Update the metadata displayed in the UI for this work."""
+        if not work.loaded:
+            return
+
+        dpg.configure_item(f"{work_id}_title_group", show=True)
         dpg.configure_item(f"{work_id}_metadata_group", show=True)
-        dpg.configure_item(f"{work_id}_title", color=(255, 255, 255), show=True)
         dpg.set_value(f"{work_id}_title", f"{work.title}")
         authors = ", ".join(author.strip() for author in work.metadata["authors"])
         dpg.set_value(f"{work_id}_author", f"Author(s): {authors}")
@@ -278,41 +279,73 @@ class GUI:
             f"{work_id}_date_edited", f"Edited: {work.metadata['date_edited'].strip()}"
         )
 
+    def _update_work_item_after_load(
+        self, work_id: int, data: Optional[WorkItem] = None, error: Optional[str] = None
+    ) -> None:
+        """Callback to be called by the engine.
+
+        When the engine completes loading of a work (which may be in another 
+        thread), this function will be called to update the placeholder item
+        with the real work metadata.
+
+        If an error occurs, an error message will be printed.
+        """
+        if not dpg.does_item_exist(f"{work_id}_window"):
+            return
+
+        if not data or error:
+            error = error or "unknown"
+            dpg.configure_item(
+                # This is hacky. TODO: make this more robus
+                f"{work_id}_loading",
+                show="rate limit" in error,
+            )
+            dpg.configure_item(f"{work_id}_title_group", show=False)
+            dpg.configure_item(f"{work_id}_metadata_group", show=False)
+            dpg.configure_item(f"{work_id}_status_group", show=True)
+            dpg.configure_item(f"{work_id}_status_text", color=(255, 0, 0))
+            dpg.set_value(f"{work_id}_status_text", f"Load error: {error}")
+            return
+
+        dpg.configure_item(f"{work_id}_loading", show=False)
+        self._update_work_item_metadata(work_id, data.work)
+        dpg.configure_item(f"{work_id}_status_group", show=False)
+
     def _update_work_item_after_download(
-        self,
-        work_id: int,
-        data: Dict[str, Any] = {},
-        error_message: Optional[str] = None,
+        self, work_id: int, data: Optional[WorkItem] = None, error: Optional[str] = None
     ) -> None:
         """Callback to be called by the engine.
 
         When the engine completes downloading of a work (which may be in another 
         thread), this function will be called to show the open button and
-        download status text.
+        update the download status text.
 
         If an error occurs, the error message will be printed.
-
-        The works must also be loaded before being downloaded, so this function
-        will also attempt to update the work elements with metadata before
-        downloading.
         """
-        if error_message:
-            self._toggle_loading_on_work(
-                work_id, show_loading=data.get("show_loading", False)
-            )
-            dpg.configure_item(f"{work_id}_open_button", show=False)
-            dpg.configure_item(f"{work_id}_download_status_group", show=True)
-            dpg.configure_item(f"{work_id}_download_status_text", color=(255, 0, 0))
-            dpg.set_value(f"{work_id}_download_status_text", error_message)
+        if not dpg.does_item_exist(f"{work_id}_window"):
             return
 
-        self._toggle_loading_on_work(work_id, show_loading=False)
+        if not (data and data.download_path) or error:
+            error = error or "unknown"
+            dpg.configure_item(
+                # This is hacky. TODO: make this more robus
+                f"{work_id}_loading",
+                show="rate limit" in error,
+            )
+            dpg.configure_item(f"{work_id}_open_button", show=False)
+            dpg.configure_item(f"{work_id}_status_group", show=True)
+            dpg.configure_item(f"{work_id}_status_text", color=(255, 0, 0))
+            dpg.set_value(
+                f"{work_id}_status_text", f"Download error: {error}",
+            )
+            return
+
+        dpg.configure_item(f"{work_id}_loading", show=False)
+        dpg.configure_item(f"{work_id}_status_group", show=True)
+        dpg.configure_item(f"{work_id}_status_text", color=(0, 255, 0))
+        dpg.set_value(f"{work_id}_status_text", f"Downloaded to: {data.download_path}")
+        dpg.set_item_user_data(f"{work_id}_open_button", {"work_id": work_id, "path": data.download_path})
         dpg.configure_item(f"{work_id}_open_button", show=True)
-        dpg.configure_item(f"{work_id}_download_status_group", show=True)
-        dpg.configure_item(f"{work_id}_download_status_text", color=(0, 255, 0))
-        dpg.set_value(f"{work_id}_download_status_text", "Downloaded")
-        dpg.set_item_user_data(f"{work_id}_open_button", {"path": data["path"]})
-        self._downloaded.add(work_id)
 
     def _show_user_input_dialog(self, sender=None, data=None, user_data=None) -> None:
         """Callback for when certain 'add <foo>' buttons are clicked.
@@ -346,32 +379,6 @@ class GUI:
                 user_data=user_data,
             )
 
-    def _load_works(self, work_ids: Set[int]) -> None:
-        """Common function for loading a bunch of work IDs.
-
-        Will show the placeholder items, try to load the works and display
-        status messages as necessary.
-        """
-        self._toggle_remove_buttons(enabled=False)
-        dpg.configure_item("add_works_status_text", color=(255, 255, 0), show=True)
-
-        dpg.set_value("add_works_status_text", f"Loading {len(work_ids)} works...")
-
-        previous_id_count = len(self._work_ids)
-        self._work_ids.update(work_ids)
-        for work_id in work_ids:
-            self._show_placeholder_work_item(work_id)
-        self.engine.load_works(work_ids, callback=self._update_work_item_after_load)
-
-        id_delta = len(self._work_ids) - previous_id_count
-        if id_delta:
-            dpg.configure_item("add_works_status_text", color=(0, 255, 0), show=True)
-            dpg.set_value("add_works_status_text", f"Loaded {id_delta} works")
-            dpg.configure_item("download_status_text", show=False)
-        else:
-            dpg.configure_item("add_works_status_text", show=False)
-        self._toggle_remove_buttons(enabled=True)
-
     def _submit_user_input(self, sender=None, data=None, user_data=None) -> None:
         """Callback for when the OK button is clicked on the add dialog.
 
@@ -388,19 +395,27 @@ class GUI:
         if dpg.does_item_exist("user_input_dialog"):
             dpg.delete_item("user_input_dialog")
 
+        dpg.configure_item("add_works_status_text", color=(255, 255, 0), show=True)
+        dpg.set_value("add_works_status_text", "Loading...")
+
         # TODO: generalize this to either work for all types of URLs, or support
         # IDs or URLs in the list.
         work_ids = set()
         add_type = user_data["add_type"]
         if add_type == "works":
-            work_ids = self.engine.work_urls_to_work_ids(items)
+            work_ids = self.engine.urls_to_work_ids(items)
         elif add_type == "series":
             work_ids = self.engine.series_urls_to_work_ids(items)
         elif add_type == "user works":
             work_ids = self.engine.usernames_to_work_ids(items)
         elif add_type == "user bookmarks":
             work_ids = self.engine.usernames_to_bookmark_ids(items)
-        self._load_works(work_ids)
+
+        for work_id in work_ids:
+            self._make_placeholder_work_item(work_id)
+        self.engine.load_works(work_ids)
+
+        dpg.configure_item("add_works_status_text", color=(255, 255, 0), show=False)
 
     def _add_self_bookmarks(self, sender=None, data=None) -> None:
         """Callback for when the add bookmarks button is clicked.
@@ -413,40 +428,21 @@ class GUI:
             return
 
         dpg.configure_item("add_works_status_text", color=(255, 255, 0), show=True)
-        dpg.set_value("add_works_status_text", "Getting bookmarks...")
-        bookmark_ids = self.engine.get_self_bookmark_ids()
-        self._load_works(bookmark_ids)
+        dpg.set_value("add_works_status_text", "Loading...")
+
+        work_ids = self.engine.get_self_bookmarks()
+        for work_id in work_ids:
+            self._make_placeholder_work_item(work_id)
+        self.engine.load_works(work_ids)
+
+        dpg.configure_item("add_works_status_text", color=(255, 255, 0), show=False)
 
     def _download_all(self, sender=None, data=None) -> None:
         """Callback for when the download all button is clicked.
 
         Calls the engine to attempt download for all IDs staged right now.
         """
-        self._toggle_remove_buttons(enabled=False)
-        dpg.configure_item("download_status_text", color=(255, 255, 0), show=True)
-        dpg.set_value(
-            "download_status_text", f"Downloading {len(self._work_ids)} works..."
-        )
-
-        for work_id in self._work_ids:
-            self._show_placeholder_work_item(work_id)
-            dpg.configure_item(f"{work_id}_download_status_group", show=False)
-        self.engine.load_works(
-            self._work_ids, callback=self._update_work_item_after_load
-        )
-        for work_id in self._work_ids:
-            self._toggle_loading_on_work(work_id, show_loading=True)
-            dpg.configure_item(f"{work_id}_download_status_group", show=False)
-            dpg.configure_item(f"{work_id}_open_button", show=False)
-        self.engine.download_works(
-            self._work_ids, callback=self._update_work_item_after_download
-        )
-
-        dpg.configure_item("download_status_text", color=(0, 255, 0), show=True)
-        dpg.set_value(
-            "download_status_text", f"Finished downloading {len(self._work_ids)} works"
-        )
-        self._toggle_remove_buttons(enabled=True)
+        self.engine.download_all()
 
     def _make_gui(self) -> None:
         """Create the layout for the entire application."""
@@ -549,7 +545,7 @@ class GUI:
                             tag="concurrency_limit_input",
                             default_value=self.engine.config.concurrency_limit,
                             min_value=1,
-                            max_value=20,
+                            max_value=50,
                             min_clamped=True,
                             max_clamped=True,
                         )
@@ -640,21 +636,14 @@ class GUI:
                         dpg.add_spacer(height=12)
                         dpg.add_text(tag="download_status_text", show=False)
 
-    def _show_placeholder_work_item(self, work_id: int) -> None:
-        """Shows the default placeholder item for a work.
-
-        This will create a UI element for the work if it does not already exist
-        or simply show/hide the sub-elements and disable the buttons if the
-        element already exists.
+    def _make_placeholder_work_item(self, work_id: int) -> None:
+        """Creates the default placeholder item for a work.
         """
-        window_tag = f"{work_id}_window"
-        if dpg.does_item_exist(window_tag):
-            dpg.configure_item(f"{work_id}_loading", show=True)
-            dpg.configure_item(f"{work_id}_content_group", show=False)
+        if dpg.does_item_exist(f"{work_id}_window"):
             return
 
         with dpg.child_window(
-            tag=window_tag, parent="works_window", autosize_x=True, height=70
+            tag=f"{work_id}_window", parent="works_window", autosize_x=True, height=70
         ):
             with dpg.group(tag=f"{work_id}_group", horizontal=True):
                 dpg.add_button(
@@ -664,8 +653,6 @@ class GUI:
                     height=50,
                     callback=self._remove_work_item,
                     user_data={"work_id": work_id},
-                    show=False,
-                    enabled=False,
                 )
                 dpg.add_loading_indicator(tag=f"{work_id}_loading", show=True)
                 dpg.add_button(
@@ -675,31 +662,33 @@ class GUI:
                     height=50,
                     callback=self._open_file,
                     show=False,
-                    enabled=False,
                 )
                 dpg.add_spacer()
-                with dpg.group(
-                    tag=f"{work_id}_content_group", horizontal=True, show=False
-                ):
+                with dpg.group(tag=f"{work_id}_content_group", horizontal=True):
                     with dpg.child_window(
                         tag=f"{work_id}_layout_left",
                         border=False,
                         width=dpg.get_viewport_width() - 120,
                         autosize_y=True,
                     ):
-                        with dpg.group(tag=f"{work_id}_title_group", horizontal=True):
+                        with dpg.group(tag=f"{work_id}_heading_group", horizontal=True):
                             dpg.add_text(f"{work_id}", tag=f"{work_id}_id")
-                            dpg.add_spacer(width=30)
-                            dpg.add_text(tag=f"{work_id}_title")
                             with dpg.group(
-                                tag=f"{work_id}_download_status_group",
+                                tag=f"{work_id}_title_group",
                                 horizontal=True,
                                 show=False,
                             ):
                                 dpg.add_spacer(width=30)
-                                dpg.add_text(tag=f"{work_id}_download_status_text")
+                                dpg.add_text(tag=f"{work_id}_title")
+                            with dpg.group(
+                                tag=f"{work_id}_status_group",
+                                horizontal=True,
+                                show=True,
+                            ):
+                                dpg.add_spacer(width=30)
+                                dpg.add_text(tag=f"{work_id}_status_text")
                         with dpg.group(
-                            tag=f"{work_id}_metadata_group", horizontal=True
+                            tag=f"{work_id}_metadata_group", horizontal=True, show=False
                         ):
                             dpg.add_text(tag=f"{work_id}_author")
                             dpg.add_spacer(width=30)
@@ -711,11 +700,17 @@ class GUI:
                             dpg.add_spacer(width=60)
 
     def _make_error_window(self):
+        """Shows an error window.
+
+        This will be shown if there is no running engine so the GUI cannot
+        start as usual. This usually occurs if there was a rate limiting error.
+        """
         with dpg.window(label="ao3d", tag="primary_window"):
             dpg.add_text("Hit rate limit :(\nPlease try again later.")
         dpg.configure_viewport("ao3d", width=200, height=100, resizable=False)
 
     def _setup_fonts(self) -> None:
+        """Load additional fonts to be used in the GUI."""
         with dpg.font_registry():
             with dpg.font("resources/fonts/unifont-14.0.01.ttf", 16) as unifont:
                 dpg.add_font_range(0x0080, 0x10FFFD)
@@ -728,9 +723,10 @@ class GUI:
 
         dpg.create_viewport(title="ao3d", width=1280, height=800)
         dpg.setup_dearpygui()
-        
+
         if self.engine:
             self._make_gui()
+            dpg.set_exit_callback(self.engine.stop)
         else:
             self._make_error_window()
         dpg.set_primary_window("primary_window", True)

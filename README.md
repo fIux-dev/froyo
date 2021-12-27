@@ -12,6 +12,7 @@ MOBI, PDF)
 * Download works in a series
 * Download all bookmarks in your account (public and private)
 * Download all works and (public) bookmarks from another user
+* Supports multi-threaded requests and retrying after being rate limited
 
 
 ## Installation
@@ -59,8 +60,9 @@ responsive performance. The concurency limit sets the maximum number of parallel
 
 Rate limiting is not enabled by default, instead the application attempts to retry with a timeout in between
 requests if a rate limit error occurs. If this is still insufficient for your use case, enabling rate limit will 
-limit the number of requests to 12 per minute, which should prevent any HTTP 429 errors. However, this will slow
-down the application significantly.
+limit the number of requests to 12 per minute. This should prevent any rate limiting errors, which is useful if you
+want to add e.g. an author or a series with a large number of works and will prevent those requests from failing.
+However, this will slow down the application significantly.
 
 ### Troubleshooting
 A `log.txt` file is generated in the same directory as the application when it is run. If you encounter any crashes 
@@ -68,15 +70,15 @@ or errors, please create an issue and attach this log file.
 
 ## Known issues
 * A black screen is shown for a bit when the application first starts. This is due to font loading taking a while.
-* UI features (most buttons) will not work while there are pending requests, particularly if the rate limit is hit.
-Most buttons will just be nonresponsive or behave in an undefined way.
 * Bookmarked series cannot be downloaded yet. A workaround is to bookmark each 
 work in the series individually.
-* If you have a lot of bookmarks and/or works, the downloader will likely be rate limited by AO3. The application will
-attempt to retry the request after some timeout, doubling the wait time each time until the request
-succeeds. In theory, this means as long as you leave the application open, it should complete the requests eventually,
-it might just take a while.
-* Closing the application while downloads are ongoing can take a while to respond if not initiated from the command line.
+* Closing the application while requests are ongoing can take a while to respond.
+* Ctrl+C through the command-line will not terminate the application cleanly. This may cause issues with the log
+file not being written completely, etc.
+* If you have a lot of bookmarks and/or works, the downloader will likely be rate limited by AO3. Right now, 
+attempting to add works/bookmarks from a user or works from a series while you are being rate limited is fatal.
+No works IDs will be added since this requires sending a request to AO3 to get the work list. If this is a problem,
+please try selecting the use rate limiting option and leave the application open for a while.
 
 ## License
 
