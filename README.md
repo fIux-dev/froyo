@@ -1,7 +1,5 @@
 # ao3d
-<img src="https://user-images.githubusercontent.com/96564770/147402142-b44336ea-278f-49c3-83cc-9d97ad115688.png" alt="screenshot" width="600">
-
-**[video preview (outdated)](https://imgur.com/a/mhInPfK)**
+![demo](https://user-images.githubusercontent.com/96564770/147512988-590491d0-95ed-4a22-95fa-7f5b70ad39e5.gif)
 
 A small graphical application for batch downloading works from [Archive Of Our Own](https://archiveofourown.org/) (AO3)
 
@@ -39,13 +37,21 @@ It is not required to log in to download works, however some functionality may b
 restricted to logged-in users and cannot be viewed in a guest session. In addition, bookmarks can only be imported
 when logged in.
 
+### Rate limiting
+
+![retry](https://user-images.githubusercontent.com/96564770/147513133-33017c3a-a642-4b2a-98d1-34eb67acfe7c.gif)
+
+If you are attempting to download a large number of works, you may be rate limited by AO3. The application will attempt
+to retry requests that failed due to rate limiting, however, if you find that you are still getting errors trying
+to load series or users, you can try enabling the rate limit option in settings.
+
 It is advisable to keep browsing of AO3 through the browser to a minimum while using the application. This is because
 rate limiting is shared across all your connections. If you are being rate limited in the application, you will also
 see a "Retry later" message when trying to access AO3 in the browser.
 
 ### Settings
 
-<img src="https://user-images.githubusercontent.com/96564770/147402186-7a79905a-74cc-4d03-870a-56aa44ff2059.png" alt="screenshot" width="600">
+![image](https://user-images.githubusercontent.com/96564770/147513187-614338a3-23f4-400a-9dda-bd3a539d9b46.png)
 
 #### AO3 Login
 A username and password can be entered in this section to authenticate with AO3. This will allow you to import
