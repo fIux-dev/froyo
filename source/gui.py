@@ -1,7 +1,7 @@
 import dearpygui.dearpygui as dpg
 import logging
 
-from AO3 import Work
+from AO3 import Work, Series, User
 from pathlib import Path
 from typing import Any, Dict, Optional, Set, Tuple
 
@@ -24,7 +24,10 @@ class GUI:
         self._downloaded = set()
 
         if engine:
-            self.engine.set_callbacks(
+            self.engine.set_enqueue_callbacks(
+                {Action.LOAD_WORK: (self._make_placeholder_work_item, None)}
+            )
+            self.engine.set_action_callbacks(
                 {
                     Action.LOAD_WORK: (
                         self._show_work_item_loading,
@@ -33,6 +36,18 @@ class GUI:
                     Action.DOWNLOAD_WORK: (
                         self._show_work_item_downloading,
                         self._update_work_item_after_download,
+                    ),
+                    Action.LOAD_SERIES: (
+                        self._show_placeholder_series_item,
+                        self._update_placeholder_series_item,
+                    ),
+                    Action.LOAD_USER_WORKS: (
+                        self._show_placeholder_user_works_item,
+                        self._update_placeholder_user_works_item,
+                    ),
+                    Action.LOAD_USER_BOOKMARKS: (
+                        self._show_placeholder_user_bookmarks_item,
+                        self._update_placeholder_user_bookmarks_item,
                     ),
                 }
             )
@@ -307,7 +322,7 @@ class GUI:
         if not work_item or error:
             error = error or "unknown"
             dpg.configure_item(
-                # This is hacky. TODO: make this more robus
+                # This is hacky. TODO: make this more robust.
                 f"{work_id}_loading",
                 show="rate limit" in error,
             )
@@ -366,6 +381,68 @@ class GUI:
         )
         dpg.configure_item(f"{work_id}_open_button", show=True)
 
+    def _update_placeholder_non_work_item(self, tag: str, error: Optional[str] = None):
+        """Show an error message if there was an error, otherwise delete the item."""
+        window_tag = f"{tag}_window"
+        if not dpg.does_item_exist(window_tag):
+            return
+
+        # This is hacky.
+        # TODO: make this more robust
+        if error and "rate limit" in error:
+            dpg.configure_item(f"{tag}_status_text", color=(255, 0, 0))
+            dpg.set_value(f"{tag}_status_text", error)
+            return
+
+        dpg.delete_item(window_tag)
+
+    def _show_placeholder_series_item(self, series_id: int) -> None:
+        """Show a placeholder indicating we are loading works from a series."""
+        self._make_placeholder_non_work_item(
+            f"{series_id}_series_placeholder",
+            f"Series {series_id}",
+            "Loading works in series...",
+        )
+
+    def _update_placeholder_series_item(
+        self,
+        series_id: int,
+        series: Optional[Series] = None,
+        error: Optional[str] = None,
+    ) -> None:
+        """Update the placeholder item for a series."""
+        self._update_placeholder_non_work_item(f"{series_id}_series_placeholder", error)
+
+    def _show_placeholder_user_works_item(self, username: str) -> None:
+        """Show a placeholder indicating we are loading works from a user."""
+        self._make_placeholder_non_work_item(
+            f"{username}_works_placeholder",
+            f"Works ({username})",
+            f"Loading works by user {username}...",
+        )
+
+    def _update_placeholder_user_works_item(
+        self, username: str, user: Optional[User] = None, error: Optional[str] = None
+    ) -> None:
+        """Update the placeholder item for user works."""
+        self._update_placeholder_non_work_item(f"{username}_works_placeholder", error)
+
+    def _show_placeholder_user_bookmarks_item(self, username: str) -> None:
+        """Show a placeholder indicating we are loading bookmarks from a user."""
+        self._make_placeholder_non_work_item(
+            f"{username}_bookmarks_placeholder",
+            f"Bookmarks ({username})",
+            f"Loading bookmarks by user {username}...",
+        )
+
+    def _update_placeholder_user_bookmarks_item(
+        self, username: str, user: Optional[User] = None, error: Optional[str] = None
+    ) -> None:
+        """Update the placeholder item for user bookmarks."""
+        self._update_placeholder_non_work_item(
+            f"{username}_bookmarks_placeholder", error
+        )
+
     def _show_user_input_dialog(self, sender=None, data=None, user_data=None) -> None:
         """Callback for when certain 'add <foo>' buttons are clicked.
 
@@ -419,20 +496,15 @@ class GUI:
 
         # TODO: generalize this to either work for all types of URLs, or support
         # IDs or URLs in the list.
-        work_ids = set()
         add_type = user_data["add_type"]
         if add_type == "works":
-            work_ids = self.engine.urls_to_work_ids(items)
+            self.engine.load_works_from_urls(items)
         elif add_type == "series":
-            work_ids = self.engine.series_urls_to_work_ids(items)
+            self.engine.load_works_from_series_urls(items)
         elif add_type == "user works":
-            work_ids = self.engine.usernames_to_work_ids(items)
+            self.engine.load_works_by_usernames(items)
         elif add_type == "user bookmarks":
-            work_ids = self.engine.usernames_to_bookmark_ids(items)
-
-        for work_id in work_ids:
-            self._make_placeholder_work_item(work_id)
-        self.engine.load_works(work_ids)
+            self.engine.load_bookmarks_by_usernames(items)
 
         dpg.configure_item("add_works_status_text", color=(255, 255, 0), show=False)
 
@@ -449,10 +521,7 @@ class GUI:
         dpg.configure_item("add_works_status_text", color=(255, 255, 0), show=True)
         dpg.set_value("add_works_status_text", "Loading...")
 
-        work_ids = self.engine.get_self_bookmarks()
-        for work_id in work_ids:
-            self._make_placeholder_work_item(work_id)
-        self.engine.load_works(work_ids)
+        work_ids = self.engine.load_self_bookmarks()
 
         dpg.configure_item("add_works_status_text", color=(255, 255, 0), show=False)
 
@@ -717,6 +786,43 @@ class GUI:
                             dpg.add_spacer(width=30)
                             dpg.add_text(tag=f"{work_id}_date_edited")
                             dpg.add_spacer(width=60)
+
+    def _make_placeholder_non_work_item(
+        self, tag: str, identifier: str, message: str
+    ) -> None:
+        """Creates the default placeholder item for a work.
+        """
+        if dpg.does_item_exist(f"{tag}_window"):
+            return
+
+        with dpg.child_window(
+            tag=f"{tag}_window", parent="works_window", autosize_x=True, height=70
+        ):
+            with dpg.group(tag=f"{tag}_group", horizontal=True):
+                # dpg.add_button(
+                #     label="X",
+                #     tag=f"{tag}_remove_button",
+                #     width=50,
+                #     height=50,
+                #     callback=self._remove_work_item,
+                #     user_data={"identifier": identifier},
+                # )
+                dpg.add_loading_indicator(tag=f"{tag}_loading", show=True)
+                dpg.add_spacer()
+                with dpg.group(tag=f"{tag}_content_group", horizontal=True):
+                    with dpg.child_window(
+                        tag=f"{tag}_layout_left",
+                        border=False,
+                        width=dpg.get_viewport_width() - 120,
+                        autosize_y=True,
+                    ):
+                        with dpg.group(tag=f"{tag}_heading_group", horizontal=True):
+                            dpg.add_text(identifier, tag=f"{tag}_id")
+                            with dpg.group(
+                                tag=f"{tag}_title_group", horizontal=True,
+                            ):
+                                dpg.add_spacer(width=30)
+                                dpg.add_text(message, tag=f"{tag}_status_text")
 
     def _make_error_window(self):
         """Shows an error window.

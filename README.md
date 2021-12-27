@@ -60,13 +60,13 @@ can also be selected from the supported formats.
 
 #### Engine
 This section controls behaviors of the application itself. Allowing multithreading will give slightly more
-responsive performance. The concurency limit sets the maximum number of parallel requests.
+responsive performance. The concurency limit sets the maximum number of parallel worker threads.
 
 Rate limiting is not enabled by default, instead the application attempts to retry with a timeout in between
-requests if a rate limit error occurs. If this is still insufficient for your use case, enabling rate limit will 
-limit the number of requests to 12 per minute. This should prevent any rate limiting errors, which is useful if you
-want to add e.g. an author or a series with a large number of works and will prevent those requests from failing.
-However, this will slow down the application significantly.
+requests if a rate limit error occurs. If you are attempting to download all works or bookmarks from a user or
+series and the number of works is very large, it is recommended to turn on rate limitingg. This will limit the number
+of requests to 12 per minute, and will slow down the speed of the application significantly, but should prevent
+any issues with being able to load users or series.
 
 ### Troubleshooting
 A `log.txt` file is generated in the same directory as the application when it is run. If you encounter any crashes 
@@ -80,9 +80,9 @@ work in the series individually.
 * Ctrl+C through the command-line will not terminate the application cleanly. This may cause issues with the log
 file not being written completely, etc.
 * If you have a lot of bookmarks and/or works, the downloader will likely be rate limited by AO3. Right now, 
-attempting to add works/bookmarks from a user or works from a series while you are being rate limited is fatal.
-No works IDs will be added since this requires sending a request to AO3 to get the work list. If this is a problem,
-please try selecting the use rate limiting option and leave the application open for a while.
+attempting to add works/bookmarks from a user or works from a series can potentially fail if the list is very large.
+This is because even if the request is retried, we may still be rate limited trying to fetch the list. The workaround
+is to enable the rate limiting flag in the settings.
 
 ## License
 
