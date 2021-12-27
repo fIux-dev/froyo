@@ -23,6 +23,7 @@ $ git clone https://github.com/fIux-dev/ao3d.git
 2. Go into the `ao3d` directory and install the required packages.
 ```
 $ cd ao3d
+$ pip install wheel
 $ pip install -r requirements.txt
 ```
 3. Run.
