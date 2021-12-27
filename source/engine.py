@@ -215,10 +215,12 @@ class Engine:
 
     def download_work(self, work_id: int) -> None:
         """Wrapper for enqueueing a download action."""
+        self._verify_download_directory_exists()
         self._enqueue_action(work_id, Action.DOWNLOAD)
 
     def download_all(self) -> None:
         """Enqueues download actions for all work IDs in the active set."""
+        self._verify_download_directory_exists()
         for work_id in self._active_ids:
             self._enqueue_action(work_id, Action.DOWNLOAD)
 
@@ -546,3 +548,8 @@ class Engine:
             / self.session.username
             / (f"{work.id}_{slugify(work.title)}.{self.config.filetype.lower()}")
         )
+
+    def _verify_download_directory_exists(self) -> None:
+        """Verify the download directory exists, and create it if it doesn't."""
+        downloads_dir = self.config.downloads_dir / self.session.username
+        downloads_dir.mkdir(parents=True, exist_ok=True)
