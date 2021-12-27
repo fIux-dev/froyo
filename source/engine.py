@@ -58,7 +58,8 @@ class Engine:
     _threads: List[Thread] = []
     _retries: Dict[int, Timer] = {}
 
-    _time_before_retry = constants.INITIAL_SECONDS_BEFORE_RETRY
+    _shutdown: bool = False
+    _time_before_retry: int = constants.INITIAL_SECONDS_BEFORE_RETRY
 
     _items_lock: Lock
     _active_ids_lock: Lock
@@ -263,7 +264,7 @@ class Engine:
         Ensures all threads are properly terminated
         """
         LOG.info("Shutting down all worker threads...")
-        self._queue.put((-1, Action._SENTINEL))
+        self._shutdown = True
         self.remove_all()
         for thread in self._threads:
             thread.join()
@@ -453,12 +454,8 @@ class Engine:
         Will attempt to continually process the queue while there are pending
         items and perform those requests.
         """
-        while True:
+        while not self._shutdown:
             identifier, action = self._queue.get()
-            if action == Action._SENTINEL:
-                # Exit condition
-                self._queue.put((-1, Action._SENTINEL))
-                return
 
             if not self._is_work_id_active(identifier, action):
                 # If the work ID is not in the active set, this usually indicates
