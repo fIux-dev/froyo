@@ -14,6 +14,15 @@ MOBI, PDF)
 
 
 ## Installation
+
+### Pre-compiled executable binaries
+
+TBD
+
+### Running from source
+If you are using another platform, you can run the application from source as 
+long as Python is supported on your platform.
+
 **Requirements**: [Python](https://www.python.org/) >= 3.8 (with the [pip](https://pypi.org/project/pip/) package manager)
 
 1. Clone the repository (or download the .ZIP).
@@ -30,6 +39,24 @@ $ pip install -r requirements.txt
 ```
 $ python3 ao3d.py
 ```
+
+### Building the binary for release
+1. Peform the same two steps in the above **Running from source** section.
+2. Install PyInstaller.
+```
+$ pip install pyinstaller
+```
+```
+2. Build the executable with PyInstaller. After running this step, there should be
+a new folder generated named `dist/`. The binary will be inside this folder.
+```
+$ pyinstaller --onefile ao3d.py
+```
+3. Copy the resources over.
+```
+$ cp -r resources dist/resources
+```
+4. Now the `dist/` folder containing the binary is ready for distribution.
 
 ## Usage
 Please see the [video preview](https://imgur.com/a/mhInPfK) for an example of how to interact with the application.
