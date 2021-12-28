@@ -58,7 +58,6 @@ class Engine:
     _threads: List[Thread] = []
     _retries: Dict[int, Timer] = {}
 
-    _shutdown: bool = False
     _time_before_retry: int = constants.INITIAL_SECONDS_BEFORE_RETRY
 
     _items_lock: Lock
@@ -68,7 +67,7 @@ class Engine:
     _action_callbacks: Dict[Action, Tuple[GUICallback, GUICallback]]
     _enqueue_callbacks: Dict[Action, Tuple[GUICallback, GUICallback]]
 
-    def __init__(self, cwd: str):
+    def __init__(self, base_directory: Path):
         self._queue = Queue()
         self._action_callbacks = {action: (None, None) for action in Action}
         self._enqueue_callbacks = {action: (None, None) for action in Action}
@@ -77,7 +76,7 @@ class Engine:
         self._active_ids_lock = Lock()
         self._retry_lock = Lock()
 
-        self.base_dir = Path(cwd)
+        self.base_dir = base_directory
         LOG.info(f"Current working directory: {self.base_dir}")
 
         # Validate data directory structure
@@ -263,12 +262,16 @@ class Engine:
 
         Ensures all threads are properly terminated
         """
-        LOG.info("Shutting down all worker threads...")
-        self._shutdown = True
+        LOG.info("Shutting down engine, please wait...")
+        self._queue.put((-1, Action._SENTINEL))
         self.remove_all()
+        LOG.info("Shutting down worker threads.")
         for thread in self._threads:
             thread.join()
+        LOG.info("Shut down worker threads.")
+        LOG.info("Shuting down retry threads...")
         self._cancel_all_retries()
+        LOG.info("Shut down retry threads.")
 
     def load_works_from_urls(self, urls: Set[str]) -> None:
         """Load works from the URLs supplied."""
@@ -454,8 +457,12 @@ class Engine:
         Will attempt to continually process the queue while there are pending
         items and perform those requests.
         """
-        while not self._shutdown:
+        while True:
             identifier, action = self._queue.get()
+            if action == Action._SENTINEL:
+                # Exit condition
+                self._queue.put((-1, Action._SENTINEL))
+                return
 
             if not self._is_work_id_active(identifier, action):
                 # If the work ID is not in the active set, this usually indicates

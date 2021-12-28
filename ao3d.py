@@ -1,7 +1,10 @@
 import AO3
 import logging
 import os
+import sys
 import time
+
+from pathlib import Path
 
 from source import constants, gui as gui_module
 from source.engine import Engine
@@ -18,12 +21,18 @@ logging.basicConfig(
     ],
 )
 
+def _get_base_directory() -> Path:
+    if getattr(sys, 'frozen', False):
+        base_directory = os.path.dirname(sys.executable)
+    elif __file__:
+        base_directory = os.path.dirname(__file__)
+    return Path(base_directory)
 
 def main() -> None:
     LOG.info("Starting...")
     engine = None
     try:
-        engine = Engine(os.getcwd())
+        engine = Engine(_get_base_directory())
     except AO3.utils.HTTPError:
         LOG.error("Hit rate limiting error. Please try again later.")
     gui = GUI(engine)
