@@ -41,7 +41,7 @@ $ python3 ao3d.py
 ```
 
 ### Building the binary for release
-1. Peform the same two steps in the above **Running from source** section.
+1. Peform the same first two steps in the above **Running from source** section.
 2. Install PyInstaller.
 ```
 $ pip install pyinstaller
