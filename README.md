@@ -46,20 +46,19 @@ $ python3 ao3d.py
 ```
 $ pip install pyinstaller
 ```
-```
 2. Build the executable with PyInstaller. After running this step, there should be
 a new folder generated named `dist/`. The binary will be inside this folder.
 ```
-$ pyinstaller --onefile ao3d.py
+$ pyinstaller --noconsole --onefile ao3d.py
 ```
-3. Copy the resources over.
+3. Copy static resources to the distribution folder.
 ```
 $ cp -r resources dist/resources
 ```
 4. Now the `dist/` folder containing the binary is ready for distribution.
 
 ## Usage
-Please see the [video preview](https://imgur.com/a/mhInPfK) for an example of how to interact with the application.
+Please see the animated previews for an example of how to interact with the application.
 
 It is not required to log in to download works, however some functionality may be restricted. Certain works may be 
 restricted to logged-in users and cannot be viewed in a guest session. In addition, bookmarks can only be imported
