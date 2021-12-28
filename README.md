@@ -16,8 +16,8 @@ MOBI, PDF)
 ## Installation
 
 ### Pre-compiled executable binaries
-
-TBD
+The latest binary releases can be found [here](https://github.com/fIux-dev/ao3d/releases). Please download the appropriate
+binary for your platform version, unzip the folder and run the executable. No installation is required.
 
 ### Running from source
 If you are using another platform, you can run the application from source as 
