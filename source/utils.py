@@ -3,14 +3,15 @@ import logging
 import os
 import requests
 import subprocess
+import urllib.parse
 
 from pathlib import Path
-from typing import Optional
+from typing import Dict, List, Optional
 
 LOG = logging.getLogger(__name__)
 
 
-def open_file(filename: Path):
+def open_file(filename: Path) -> None:
     """Attempt to open file with default system application. Cross-platform."""
     LOG.info(f"Trying to open {filename} in default system application...")
     try:
@@ -35,7 +36,7 @@ def series_id_from_url(url: str) -> Optional[int]:
         series_id = split_url[index + 1].split("?")[0]
         if series_id.isdigit():
             return int(series_id)
-    return
+    return None
 
 
 def does_user_exist(username: str, session: requests.Session) -> bool:
@@ -63,3 +64,18 @@ def does_user_exist(username: str, session: requests.Session) -> bool:
     elif request.status_code == 200:
         return True
     return False
+
+
+def get_query_string(query_dict: Dict[str, List[str]], sep="&", quote=True) -> str:
+    """Returns a joined query string for the (key, values) supplied.
+
+    This supports multiple values for the same key.
+    """
+    query_string = sep.join(
+        sep.join(
+            f"{urllib.parse.quote_plus(str(key)) if quote else str(key)}={urllib.parse.quote_plus(str(value)) if quote else str(value)}"
+            for value in query_dict[key]
+        )
+        for key in query_dict
+    )
+    return query_string

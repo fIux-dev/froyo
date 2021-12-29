@@ -1,7 +1,7 @@
-# ao3d
+# froyo
 ![demo](https://user-images.githubusercontent.com/96564770/147512988-590491d0-95ed-4a22-95fa-7f5b70ad39e5.gif)
 
-A small graphical application for batch downloading works from [Archive Of Our Own](https://archiveofourown.org/) (AO3)
+A small graphical application for batch downloading works from [Archive Of Our Own](https://archiveofourown.org/) (AO3). Curate a **f**ic **r**epo **o**f **y**our **o**wn today :)
 
 ### Features
 * Batch downloading works to supported formats (AZW3, EPUB, HTML, 
@@ -16,8 +16,8 @@ MOBI, PDF)
 ## Installation
 
 ### Pre-compiled executable binaries
-
-TBD
+The latest binary releases can be found [here](https://github.com/fIux-dev/froyo/releases). Please download the appropriate
+binary for your platform version, unzip the folder and run the executable. No installation is required.
 
 ### Running from source
 If you are using another platform, you can run the application from source as 
@@ -27,21 +27,21 @@ long as Python is supported on your platform.
 
 1. Clone the repository (or download the .ZIP).
 ```
-$ git clone https://github.com/fIux-dev/ao3d.git
+$ git clone https://github.com/fIux-dev/froyo.git
 ```
-2. Go into the `ao3d` directory and install the required packages.
+2. Go into the `froyo` directory and install the required packages.
 ```
-$ cd ao3d
+$ cd froyo
 $ pip install wheel
 $ pip install -r requirements.txt
 ```
 3. Run.
 ```
-$ python3 ao3d.py
+$ python3 froyo.py
 ```
 
 ### Building the binary for release
-1. Peform the same two steps in the above **Running from source** section.
+1. Peform the same first two steps in the above **Running from source** section.
 2. Install PyInstaller.
 ```
 $ pip install pyinstaller
@@ -49,7 +49,7 @@ $ pip install pyinstaller
 2. Build the executable with PyInstaller. After running this step, there should be
 a new folder generated named `dist/`. The binary will be inside this folder.
 ```
-$ pyinstaller --noconsole --onefile ao3d.py
+$ pyinstaller --noconsole --onefile froyo.py
 ```
 3. Copy static resources to the distribution folder.
 ```
@@ -109,6 +109,8 @@ or errors, please create an issue and attach this log file.
 * A black screen is shown for a bit when the application first starts. This is due to font loading taking a while.
 * Bookmarked series cannot be downloaded yet. A workaround is to bookmark each 
 work in the series individually.
+* Currently it is not possible to cancel loading bookmarks, series, user works, user bookmarks, generic URL pages
+until the individual works are loaded. A workaround is to restart the application.
 * Closing the application while requests are ongoing can take a while to respond.
 * Ctrl+C through the command-line will not terminate the application cleanly. This may cause issues with the log
 file not being written completely, etc.

@@ -11,10 +11,11 @@ from queue import Queue
 from AO3 import GuestSession, Series, Session, User, Work
 from dataclasses import dataclass
 from slugify import slugify
-from threading import Lock, Semaphore, Thread, Timer
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
+from threading import Lock, Thread, Timer
+from typing import Any, Callable, Dict, Hashable, List, Optional, Set, Tuple, Union
 
-from . import constants, utils
+from . import ao3_extensions, constants, utils
+from .ao3_extensions import Results, ResultsPage
 from .configuration import Configuration
 
 LOG = logging.getLogger(__name__)
@@ -27,6 +28,8 @@ class Action(enum.Enum):
     LOAD_SERIES = 3
     LOAD_USER_WORKS = 4
     LOAD_USER_BOOKMARKS = 5
+    LOAD_RESULTS_LIST = 6
+    LOAD_RESULTS_PAGE = 7
 
 
 class Status(enum.Enum):
@@ -44,7 +47,6 @@ class WorkItem:
 GUICallback = Callable[..., None]
 Args = List[Any]
 Kwargs = Dict[str, Any]
-Identifier = Union[int, str]
 
 
 class Engine:
@@ -56,7 +58,7 @@ class Engine:
     _items: Dict[int, WorkItem] = {}
     _active_ids: Set[int] = set()
     _threads: List[Thread] = []
-    _retries: Dict[int, Timer] = {}
+    _retries: Dict[Hashable, List[Timer]] = {}
 
     _time_before_retry: int = constants.INITIAL_SECONDS_BEFORE_RETRY
 
@@ -64,8 +66,10 @@ class Engine:
     _active_ids_lock: Lock
     _retry_lock: Lock
 
-    _action_callbacks: Dict[Action, Tuple[GUICallback, GUICallback]]
-    _enqueue_callbacks: Dict[Action, Tuple[GUICallback, GUICallback]]
+    _action_callbacks: Dict[Action, Tuple[Optional[GUICallback], Optional[GUICallback]]]
+    _enqueue_callbacks: Dict[
+        Action, Tuple[Optional[GUICallback], Optional[GUICallback]]
+    ]
 
     def __init__(self, base_directory: Path):
         self._queue = Queue()
@@ -193,7 +197,7 @@ class Engine:
         try:
             self.config.parse_from_file()
             return 0
-        except Exception:
+        except Exception as e:
             LOG.error(f"Error getting settings: {e}")
             return 1
 
@@ -218,7 +222,7 @@ class Engine:
 
         return self.config.write_to_file()
 
-    def remove(self, work_id: int) -> bool:
+    def remove(self, work_id: int) -> None:
         """Remove an ID from the active IDs set.
 
         This is usually called when the user removes a work through the GUI.
@@ -233,7 +237,7 @@ class Engine:
         for action in Action:
             self._cancel_retries(work_id, action)
 
-    def remove_all(self) -> bool:
+    def remove_all(self) -> None:
         """Remove all IDs from the active IDs set.
 
         The removal functions are CPU bound so it's okay to be non-async here.
@@ -273,7 +277,7 @@ class Engine:
         self._cancel_all_retries()
         LOG.info("Shut down retry threads.")
 
-    def load_works_from_urls(self, urls: Set[str]) -> None:
+    def load_works_from_work_urls(self, urls: Set[str]) -> None:
         """Load works from the URLs supplied."""
         for url in urls:
             work_id = AO3.utils.workid_from_url(url)
@@ -292,7 +296,7 @@ class Engine:
             series_id = utils.series_id_from_url(url)
             if series_id:
                 LOG.info(f"Loading works from series {series_id}...")
-                self._queue.put((series_id, Action.LOAD_SERIES))
+                self._enqueue_action(series_id, Action.LOAD_SERIES)
             else:
                 LOG.error(f"{url} was not a valid series URL, skipping.")
 
@@ -303,7 +307,7 @@ class Engine:
         list.
         """
         for username in usernames:
-            self._queue.put((username, Action.LOAD_USER_WORKS))
+            self._enqueue_action(username, Action.LOAD_USER_WORKS)
 
     def load_bookmarks_by_usernames(self, usernames: Set[str]) -> None:
         """Load bookmarks by every username supplied.
@@ -312,32 +316,25 @@ class Engine:
         list.
         """
         for username in usernames:
-            self._queue.put((username, Action.LOAD_USER_BOOKMARKS))
+            self._enqueue_action(username, Action.LOAD_USER_BOOKMARKS)
 
-    def load_self_bookmarks(self) -> None:
-        """Return work IDs for current session user.
-
-        This will attempt to return every bookmark by the current user.
-        Note that this can be rate limited, and there is no retry logic yet.
-
-        TODO: make this non-blocking
-        """
-        try:
-            LOG.info("Loading bookmarked works...")
-            # TODO: send PR to AO3 API to make this work for series bookmarks
-            bookmarks = self.session.get_bookmarks(
-                use_threading=self.config.should_use_threading
-            )
-            for work in bookmarks:
-                self._enqueue_work_action(work.id, Action.LOAD_WORK)
-        except Exception as e:
-            LOG.error(
-                f"Error getting bookmarks for user: {self.session.username}: {e}. Skipping."
-            )
-            raise e
+    def load_works_from_generic_url(
+        self, url: str, page_start: int, page_end: int
+    ) -> None:
+        """Load works from the URLs supplied."""
+        ao3_url = ao3_extensions.get_ao3_url(url)
+        if ao3_url is not None:
+            if page_start == page_end:
+                self._enqueue_action((ao3_url, page_start), Action.LOAD_RESULTS_PAGE)
+            else:
+                self._enqueue_action(
+                    (ao3_url, page_start, page_end), Action.LOAD_RESULTS_LIST
+                )
+        else:
+            LOG.error(f"{url} was not a valid AO3 URL, skipping.")
 
     # Threading helper functions
-    def _enqueue_work_action(self, work_id: Identifier, action: Action) -> None:
+    def _enqueue_work_action(self, work_id: int, action: Action) -> None:
         """Enqueues an (id, action) entry on the worker queue.
 
         This should only be used for works since it adds to the active ID set.
@@ -345,11 +342,22 @@ class Engine:
         self._active_ids_lock.acquire()
         self._active_ids.add(work_id)
         self._active_ids_lock.release()
-        self._run_before_enqueue(action, args=[work_id])
-        self._queue.put((work_id, action))
-        self._run_after_enqueue(action, args=[work_id])
+        self._enqueue_action(work_id, action, run_callbacks=True)
 
-    def _is_work_id_active(self, work_id: Identifier, action: Action) -> bool:
+    def _enqueue_action(
+        self, identifier: Hashable, action: Action, run_callbacks=False
+    ) -> None:
+        """Enqueues an (id, action) entry on the worker queue.
+        """
+        if not run_callbacks:
+            self._queue.put((identifier, action))
+            return
+
+        self._run_before_enqueue(action, args=[identifier])
+        self._queue.put((identifier, action))
+        self._run_after_enqueue(action, args=[identifier])
+
+    def _is_work_id_active(self, work_id: int, action: Action) -> bool:
         """Locking read of the active work ID set.
     
         If an ID is not active, it may have been deleted by the user through
@@ -392,12 +400,12 @@ class Engine:
         self._items[work_id] = item
         self._items_lock.release()
 
-    def _cancel_retries(self, work_id: int, action: Action) -> None:
-        """Cancel all current threads attempting to retry this (work_id, action).
+    def _cancel_retries(self, identifier: Hashable, action: Action) -> None:
+        """Cancel all current threads attempting to retry this (identifier, action).
 
         Usually called when the action succeeds in another thread.
         """
-        key = (work_id, action)
+        key = (identifier, action)
         self._retry_lock.acquire()
         if key not in self._retries:
             self._retry_lock.release()
@@ -407,7 +415,7 @@ class Engine:
             thread.cancel()
             thread.join()
 
-        del self._retries[(work_id, action)]
+        del self._retries[(identifier, action)]
         self._retry_lock.release()
 
     def _cancel_all_retries(self) -> None:
@@ -420,19 +428,19 @@ class Engine:
                 thread.join()
         self._retry_lock.release()
 
-    def _get_seconds_before_retry(self, work_id: int, action: Action) -> int:
+    def _get_seconds_before_retry(self, identifier: Hashable, action: Action) -> int:
         """Get the time in seconds to wait before retrying the action for the ID.
 
         The wait time increases exponentially, doubling based on how many times
         we have attempted to retry.
         """
         self._retry_lock.acquire()
-        n_retries = len(self._retries.get((work_id, action), []))
+        n_retries = len(self._retries.get((identifier, action), []))
         self._retry_lock.release()
         retry_time = constants.INITIAL_SECONDS_BEFORE_RETRY * (1 << n_retries)
         return retry_time
 
-    def _retry(self, identifier: Identifier, action: Action, wait_time: int) -> None:
+    def _retry(self, identifier: Hashable, action: Action, wait_time: int) -> None:
         """Spawn a new thread to enqueue the action again after some time.
         """
         LOG.info(
@@ -440,7 +448,7 @@ class Engine:
         )
         self._retry_lock.acquire()
 
-        retry = Timer(wait_time, self._queue.put, args=((identifier, action),))
+        retry = Timer(wait_time, self._enqueue_action, args=(identifier, action))
         retry.start()
 
         key = (identifier, action)
@@ -471,9 +479,10 @@ class Engine:
                 continue
 
             args = [identifier]
-            kwargs = {}
             self._run_before_action(action, args=args)
 
+            status = Status.ERROR
+            kwargs = {}
             if action == Action.LOAD_WORK:
                 status, kwargs = self._load_work(identifier)
             elif action == Action.DOWNLOAD_WORK:
@@ -484,6 +493,14 @@ class Engine:
                 status, kwargs = self._load_works_from_user(identifier)
             elif action == Action.LOAD_USER_BOOKMARKS:
                 status, kwargs = self._load_bookmarks_from_user(identifier)
+            elif action == Action.LOAD_RESULTS_LIST:
+                url, page_start, page_end = identifier
+                status, kwargs = self._load_pages_from_results_list(
+                    url, page_start, page_end
+                )
+            elif action == Action.LOAD_RESULTS_PAGE:
+                url, page = identifier
+                status, kwargs = self._load_works_from_results_page(url, page)
 
             if not self._is_work_id_active(identifier, action):
                 # Again, work ID may have been removed since the processing was
@@ -497,6 +514,7 @@ class Engine:
             elif status == Status.OK:
                 self._cancel_retries(identifier, action)
 
+            args.append(status)
             self._run_after_action(action, args=args, kwargs=kwargs)
 
     def _reload_work_with_current_session(self, work: Work) -> None:
@@ -646,15 +664,24 @@ class Engine:
         TODO: look into pausing and resuming if the work list is really long.
         """
         try:
-            if not utils.does_user_exist(username, self.session.session):
-                return (Status.ERROR, {"error": "User does not exist"})
+            bookmarks = []
+            kwargs = {}
+            if username == self.session.username:
+                bookmarks = self.session.get_bookmarks(
+                    use_threading=self.config.should_use_threading
+                )
+            else:
+                if not utils.does_user_exist(username, self.session.session):
+                    return (Status.ERROR, {"error": "User does not exist"})
 
-            user = User(username)
-            for work in user.get_bookmarks(
-                use_threading=self.config.should_use_threading
-            ):
+                user = User(username)
+                bookmarks = user.get_bookmarks(
+                    use_threading=self.config.should_use_threading
+                )
+                kwargs = {"user": user}
+            for work in bookmarks:
                 self._enqueue_work_action(work.id, Action.LOAD_WORK)
-            return (Status.OK, {"user": user})
+            return (Status.OK, kwargs)
         except (AttributeError, AO3.utils.HTTPError):
             # This is a hack due to how the AO3 API works right now.
             LOG.warning(
@@ -664,6 +691,54 @@ class Engine:
             return (Status.RETRY, {})
         except Exception as e:
             LOG.error(f"Error downloading bookmarks from user {username}: {e}")
+            return (Status.ERROR, {"error": str(e)})
+
+    def _load_pages_from_results_list(
+        self, url: str, page_start: int, page_end: int
+    ) -> Tuple[Status, Kwargs]:
+        """Function to be called from a worker thread.
+
+        This will enqueue all pages in the range to be loaded so that the works
+        on those pages can be loaded.
+        """
+        try:
+            results = Results(url, page_start, page_end, self.session.session)
+            results.update()
+            for page in range(
+                max(1, results.page_start), min(results.pages, results.page_end) + 1
+            ):
+                self._enqueue_action((url, page), Action.LOAD_RESULTS_PAGE)
+            return (Status.OK, {"results": results})
+        except AO3.utils.HTTPError:
+            LOG.warning(
+                f"Hit rate limit trying to load url `{url}`. " f"Attempting to retry..."
+            )
+            return (Status.RETRY, {})
+        except Exception as e:
+            LOG.error(f"Error loading results list for url `{url}`: {e}")
+            return (Status.ERROR, {"error": str(e)})
+
+    def _load_works_from_results_page(
+        self, url: str, page: int
+    ) -> Tuple[Status, Kwargs]:
+        """Function to be called from a worker thread.
+
+        This will enqueue all works on the page to be loaded.
+        """
+        try:
+            results_page = ResultsPage(url, page, self.session.session)
+            results_page.update()
+            for work_id in results_page.work_ids:
+                self._enqueue_work_action(work_id, Action.LOAD_WORK)
+            return (Status.OK, {"results_page": results_page})
+        except AO3.utils.HTTPError:
+            LOG.warning(
+                f"Hit rate limit trying to load page {page} of url `{url}`. "
+                f"Attempting to retry..."
+            )
+            return (Status.RETRY, {})
+        except Exception as e:
+            LOG.error(f"Error loading results page {page} for url `{url}`: {e}")
             return (Status.ERROR, {"error": str(e)})
 
     # Utility functions

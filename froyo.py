@@ -21,12 +21,15 @@ logging.basicConfig(
     ],
 )
 
+
 def _get_base_directory() -> Path:
-    if getattr(sys, 'frozen', False):
+    base_directory = None
+    if getattr(sys, "frozen", False):
         base_directory = os.path.dirname(sys.executable)
     elif __file__:
         base_directory = os.path.dirname(__file__)
     return Path(base_directory)
+
 
 def main() -> None:
     LOG.info("Starting...")

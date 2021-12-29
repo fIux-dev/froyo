@@ -127,8 +127,9 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+.pyre_configuration
 
-# ao3d
+# froyo
 settings.ini
 log.txt
 data/

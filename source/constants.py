@@ -1,9 +1,57 @@
+AO3_DOMAIN = "archiveofourown.org"
 VALID_FILETYPES = {"AZW3", "EPUB", "HTML", "MOBI", "PDF"}
+AO3_SORT_BY = {
+    "Author": "authors_to_sort_on",
+    "Title": "title_to_sort_on",
+    "Date Posted": "created_at",
+    "Date Update": "revised_at",
+    "Word Count": "word_count",
+    "Hits": "hits",
+    "Kudos": "kudos_count",
+    "Comments": "comments_count",
+    "Bookmarks": "bookmarks_count",
+}
+AO3_TAG_FIELDS = (
+    "warnings",
+    "categories",
+    "fandoms",
+    "characters",
+    "relationships",
+    "additional_tags",
+)
+AO3_RATINGS = {
+    "Not Rated": 9,
+    "General Audiences": 10,
+    "Teen And Up Audiences": 11,
+    "Mature": 12,
+    "Explicit": 13,
+}
+AO3_WARNINGS = {
+    "Creator Chose Not To Use Archive Warnings": 14,
+    "No Archive Warnings Apply": 16,
+    "Graphic Depictions Of Violence": 17,
+    "Major Character Death": 18,
+    "Rape/Non-Con": 19,
+    "Underage": 20,
+}
+AO3_CATEGORIES = {
+    "Gen": 21,
+    "F/M": 22,
+    "M/M": 23,
+    "F/F": 116,
+    "Multi": 2246,
+    "Other": 24,
+}
+AO3_CROSSOVER_OPTIONS = [
+    "Include crossovers",
+    "Exclude crossovers",
+    "Show only crossovers",
+]
 
 DATA_DIR = "data"
 BOOKMARKS_DIR = "bookmarks"
 
-DEFAULT_DOWNLOADS_DIR = "Downloads/ao3d"
+DEFAULT_DOWNLOADS_DIR = "Downloads/froyo"
 DEFAULT_DOWNLOADS_FILETYPE = "PDF"
 DEFAULT_CONCURRENCY_LIMIT = 20
 
@@ -12,7 +60,7 @@ INITIAL_SECONDS_BEFORE_RETRY = 10
 LOG_FILE = "log.txt"
 CONFIGURATION_FILE = "settings.ini"
 
-CONFIGURATION_FILE_TEMPLATE = """; ao3d config file
+CONFIGURATION_FILE_TEMPLATE = """; froyo config file
 ;
 ; Please only edit manually if you know what you're doing. Otherwise, prefer
 ; to configure settings using the GUI instead.

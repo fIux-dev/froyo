@@ -6,7 +6,8 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Set, Tuple
 
 from . import constants, utils
-from .engine import Action, Engine, WorkItem
+from .ao3_extensions import Results, ResultsPage
+from .engine import Action, Engine, Status, WorkItem
 from .configuration import Configuration
 
 LOG = logging.getLogger(__name__)
@@ -18,7 +19,7 @@ class GUI:
     _work_ids: Set[int]
     _downloaded: Set[int]
 
-    def __init__(self, engine: Engine = None):
+    def __init__(self, engine: Optional[Engine] = None):
         self.engine = engine
         self._work_ids = set()
         self._downloaded = set()
@@ -48,6 +49,14 @@ class GUI:
                     Action.LOAD_USER_BOOKMARKS: (
                         self._show_placeholder_user_bookmarks_item,
                         self._update_placeholder_user_bookmarks_item,
+                    ),
+                    Action.LOAD_RESULTS_LIST: (
+                        self._show_placeholder_results_list_item,
+                        self._update_placeholder_results_list_item,
+                    ),
+                    Action.LOAD_RESULTS_PAGE: (
+                        self._show_placeholder_results_page_item,
+                        self._update_placeholder_results_page_item,
                     ),
                 }
             )
@@ -199,7 +208,7 @@ class GUI:
             "Error loading settings",
         )
 
-    def _open_file(self, sender=None, data=None, user_data=None):
+    def _open_file(self, sender=None, data=None, user_data=None) -> None:
         """Callback for clicking the open button on a work.
 
         Tries to open the destination of the downloaded file with the system
@@ -305,6 +314,7 @@ class GUI:
     def _update_work_item_after_load(
         self,
         work_id: int,
+        status: Status,
         work_item: Optional[WorkItem] = None,
         error: Optional[str] = None,
     ) -> None:
@@ -322,9 +332,7 @@ class GUI:
         if not work_item or error:
             error = error or "unknown"
             dpg.configure_item(
-                # This is hacky. TODO: make this more robust.
-                f"{work_id}_loading",
-                show="rate limit" in error,
+                f"{work_id}_loading", show=status is Status.RETRY,
             )
             dpg.configure_item(f"{work_id}_title_group", show=False)
             dpg.configure_item(f"{work_id}_metadata_group", show=False)
@@ -340,6 +348,7 @@ class GUI:
     def _update_work_item_after_download(
         self,
         work_id: int,
+        status: Status,
         work_item: Optional[WorkItem] = None,
         error: Optional[str] = None,
     ) -> None:
@@ -359,7 +368,7 @@ class GUI:
             dpg.configure_item(
                 # This is hacky. TODO: make this more robus
                 f"{work_id}_loading",
-                show="rate limit" in error,
+                show=status is Status.RETRY,
             )
             dpg.configure_item(f"{work_id}_open_button", show=False)
             dpg.configure_item(f"{work_id}_status_group", show=True)
@@ -381,15 +390,15 @@ class GUI:
         )
         dpg.configure_item(f"{work_id}_open_button", show=True)
 
-    def _update_placeholder_non_work_item(self, tag: str, error: Optional[str] = None):
+    def _update_placeholder_non_work_item(
+        self, tag: str, status: Status, error: Optional[str] = None
+    ) -> None:
         """Show an error message if there was an error, otherwise delete the item."""
         window_tag = f"{tag}_window"
         if not dpg.does_item_exist(window_tag):
             return
 
-        # This is hacky.
-        # TODO: make this more robust
-        if error and "rate limit" in error:
+        if error and status is Status.RETRY:
             dpg.configure_item(f"{tag}_status_text", color=(255, 0, 0))
             dpg.set_value(f"{tag}_status_text", error)
             return
@@ -407,11 +416,14 @@ class GUI:
     def _update_placeholder_series_item(
         self,
         series_id: int,
+        status: Status,
         series: Optional[Series] = None,
         error: Optional[str] = None,
     ) -> None:
         """Update the placeholder item for a series."""
-        self._update_placeholder_non_work_item(f"{series_id}_series_placeholder", error)
+        self._update_placeholder_non_work_item(
+            f"{series_id}_series_placeholder", status, error
+        )
 
     def _show_placeholder_user_works_item(self, username: str) -> None:
         """Show a placeholder indicating we are loading works from a user."""
@@ -422,10 +434,16 @@ class GUI:
         )
 
     def _update_placeholder_user_works_item(
-        self, username: str, user: Optional[User] = None, error: Optional[str] = None
+        self,
+        username: str,
+        status: Status,
+        user: Optional[User] = None,
+        error: Optional[str] = None,
     ) -> None:
         """Update the placeholder item for user works."""
-        self._update_placeholder_non_work_item(f"{username}_works_placeholder", error)
+        self._update_placeholder_non_work_item(
+            f"{username}_works_placeholder", status, error
+        )
 
     def _show_placeholder_user_bookmarks_item(self, username: str) -> None:
         """Show a placeholder indicating we are loading bookmarks from a user."""
@@ -436,11 +454,62 @@ class GUI:
         )
 
     def _update_placeholder_user_bookmarks_item(
-        self, username: str, user: Optional[User] = None, error: Optional[str] = None
+        self,
+        username: str,
+        status: Status,
+        user: Optional[User] = None,
+        error: Optional[str] = None,
     ) -> None:
         """Update the placeholder item for user bookmarks."""
         self._update_placeholder_non_work_item(
-            f"{username}_bookmarks_placeholder", error
+            f"{username}_bookmarks_placeholder", status, error
+        )
+
+    def _show_placeholder_results_list_item(
+        self, identifier: Tuple[str, int, int]
+    ) -> None:
+        """Show a placeholder indicating we are loading generic AO3 results."""
+        url, page_start, page_end = identifier
+        self._make_placeholder_non_work_item(
+            f"results_list_{hash(identifier)}_placeholder",
+            f"URL",
+            f"Loading pages {page_start}-{page_end or 'end'} for {url}...",
+        )
+
+    def _update_placeholder_results_list_item(
+        self,
+        identifier: Tuple[str, int, int],
+        status: Status,
+        results: Optional[Results] = None,
+        error: Optional[str] = None,
+    ) -> None:
+        """Update the placeholder item for generic AO3 results."""
+        url, page_start, page_end = identifier
+        self._update_placeholder_non_work_item(
+            f"results_list_{hash(identifier)}_placeholder", status, error
+        )
+
+    def _show_placeholder_results_page_item(self, identifier: Tuple[str, int],) -> None:
+        """Show a placeholder indicating we are loading a page for some set of
+        generic AO3 results."""
+        url, page = identifier
+        self._make_placeholder_non_work_item(
+            f"results_page_{hash(identifier)}_placeholder",
+            f"URL",
+            f"Loading page {page} for {url}...",
+        )
+
+    def _update_placeholder_results_page_item(
+        self,
+        identifier: Tuple[str, int],
+        status: Status,
+        results_page: Optional[ResultsPage] = None,
+        error: Optional[str] = None,
+    ) -> None:
+        """Update the placeholder item for a generic AO3 results page."""
+        url, page = identifier
+        self._update_placeholder_non_work_item(
+            f"results_page_{hash(identifier)}_placeholder", status, error
         )
 
     def _show_user_input_dialog(self, sender=None, data=None, user_data=None) -> None:
@@ -450,7 +519,24 @@ class GUI:
         enter text.
         """
         if dpg.does_item_exist("user_input_dialog"):
-            dpg.delete_item("user_input_dialog")
+            dpg.configure_item(
+                "user_input_dialog",
+                label=f"Add {user_data['add_type']}",
+                width=600,
+                height=300,
+                pos=(
+                    (dpg.get_viewport_width() - 600) // 2,
+                    (dpg.get_viewport_height() - 300) // 2,
+                ),
+            )
+            dpg.configure_item("user_input_dialog", show=True)
+            dpg.set_value(
+                "user_input_dialog_text",
+                f"Enter {user_data['input_type']} on a new line each:",
+            )
+            dpg.set_value("user_input", "")
+            dpg.set_item_user_data("submit_user_input_button", user_data)
+            return
 
         with dpg.window(
             label=f"Add {user_data['add_type']}",
@@ -466,11 +552,12 @@ class GUI:
                 f"Enter {user_data['input_type']} on a new line each:",
                 tag="user_input_dialog_text",
             )
-            dpg.add_input_text(tag="user_input", multiline=True, width=580, height=200)
+            dpg.add_input_text(tag="user_input", multiline=True, width=-1, height=-50)
             dpg.add_button(
                 label="OK",
                 tag="submit_user_input_button",
-                small=True,
+                width=50,
+                height=40,
                 callback=self._submit_user_input,
                 user_data=user_data,
             )
@@ -481,6 +568,8 @@ class GUI:
         This will call the appropriate function to load works depending on
         what the caller was.
         """
+        if dpg.does_item_exist("user_input_dialog"):
+            dpg.configure_item("user_input_dialog", show=False)
 
         # TODO: add an error message if some works in list couldn't be loaded
         items = set(
@@ -488,8 +577,6 @@ class GUI:
                 None, [line.strip() for line in dpg.get_value("user_input").split("\n")]
             )
         )
-        if dpg.does_item_exist("user_input_dialog"):
-            dpg.delete_item("user_input_dialog")
 
         dpg.configure_item("add_works_status_text", color=(255, 255, 0), show=True)
         dpg.set_value("add_works_status_text", "Loading...")
@@ -498,7 +585,7 @@ class GUI:
         # IDs or URLs in the list.
         add_type = user_data["add_type"]
         if add_type == "works":
-            self.engine.load_works_from_urls(items)
+            self.engine.load_works_from_work_urls(items)
         elif add_type == "series":
             self.engine.load_works_from_series_urls(items)
         elif add_type == "user works":
@@ -508,10 +595,91 @@ class GUI:
 
         dpg.configure_item("add_works_status_text", color=(255, 255, 0), show=False)
 
+    def _show_generic_url_dialog(self, sender=None, data=None, user_data=None) -> None:
+        """Callback for when the 'add generic URL' button is clicked.
+
+        Displays a small popup window with a multiline textbox where users can
+        enter a generic AO3 URL with a list of works.
+        """
+        if dpg.does_item_exist("generic_url_dialog"):
+            dpg.configure_item("generic_url_dialog", show=True)
+            dpg.set_value("generic_url_input", "")
+            dpg.set_value("page_start_input", 1)
+            dpg.set_value("page_end_input", 1)
+            return
+
+        with dpg.window(
+            label="Add generic AO3 page URL",
+            tag="generic_url_dialog",
+            width=600,
+            height=300,
+            pos=(
+                (dpg.get_viewport_width() - 600) // 2,
+                (dpg.get_viewport_height() - 300) // 2,
+            ),
+        ):
+            with dpg.child_window(border=False, autosize_x=True, height=-50):
+                dpg.add_text(
+                    "Enter the URL of an AO3 page that lists works. \n\n"
+                    "This can be a tag page, search results, etc.",
+                    tag="generic_url_input_dialog_text",
+                )
+                dpg.add_input_text(tag="generic_url_input", width=-1, height=100)
+
+                dpg.add_spacer(height=20)
+                dpg.add_text(
+                    "Page range (set end to 0 to get all pages):",
+                    tag="page_range_text",
+                )
+                with dpg.group(horizontal=True):
+                    dpg.add_input_int(
+                        tag="page_start_input",
+                        min_value=1,
+                        default_value=1,
+                        min_clamped=True,
+                        width=100,
+                    )
+                    dpg.add_spacer(width=20)
+                    dpg.add_text("to", tag="page_range_to_text")
+                    dpg.add_spacer(width=20)
+                    dpg.add_input_int(
+                        tag="page_end_input",
+                        min_value=0,
+                        default_value=1,
+                        min_clamped=True,
+                        width=100,
+                    )
+            dpg.add_button(
+                label="OK",
+                tag="generic_url_submit_button",
+                width=50,
+                height=40,
+                callback=self._submit_generic_url,
+            )
+
+    def _submit_generic_url(self, sender=None, data=None, user_data=None) -> None:
+        """Callback for when the OK button is clicked on the generic URL dialog."""
+        if dpg.does_item_exist("generic_url_dialog"):
+            dpg.configure_item("generic_url_dialog", show=False)
+
+        page_start = dpg.get_value("page_start_input")
+        page_end = dpg.get_value("page_end_input")
+        url = dpg.get_value("generic_url_input").strip()
+        if not url:
+            return
+
+        dpg.configure_item("add_works_status_text", color=(255, 255, 0), show=True)
+        dpg.set_value("add_works_status_text", "Loading...")
+        self.engine.load_works_from_generic_url(url, page_start, page_end)
+        dpg.configure_item("add_works_status_text", color=(255, 255, 0), show=False)
+
     def _add_self_bookmarks(self, sender=None, data=None) -> None:
         """Callback for when the add bookmarks button is clicked.
 
-        Calls the engine to get all bookmarks and attempt to load them all.
+        Calls the engine to get all bookmarks for the current logged-in user
+        and attempt to load them all.
+
+        If the user is not logged in, this will not work.
         """
         if not self.engine.session.is_authed:
             dpg.configure_item("add_works_status_text", color=(255, 0, 0), show=True)
@@ -521,7 +689,7 @@ class GUI:
         dpg.configure_item("add_works_status_text", color=(255, 255, 0), show=True)
         dpg.set_value("add_works_status_text", "Loading...")
 
-        work_ids = self.engine.load_self_bookmarks()
+        self.engine.load_bookmarks_by_usernames([self.engine.session.username])
 
         dpg.configure_item("add_works_status_text", color=(255, 255, 0), show=False)
 
@@ -534,7 +702,7 @@ class GUI:
 
     def _make_gui(self) -> None:
         """Create the layout for the entire application."""
-        with dpg.window(label="ao3d", tag="primary_window"):
+        with dpg.window(label="froyo", tag="primary_window"):
             with dpg.tab_bar(tag="tabs"):
                 self._make_settings_tab()
                 self._make_downloads_tab()
@@ -693,10 +861,15 @@ class GUI:
                     callback=self._show_user_input_dialog,
                     user_data={"add_type": "user bookmarks", "input_type": "usernames"},
                 )
+                dpg.add_button(
+                    label="Add generic URL",
+                    tag="add_url_button",
+                    callback=self._show_generic_url_dialog,
+                )
                 dpg.add_spacer(width=50)
                 dpg.add_text(tag="add_works_status_text", show=False)
             dpg.add_spacer(tag="works_group_spacer")
-            dpg.add_child_window(tag="works_window", autosize_x=True, height=610)
+            dpg.add_child_window(tag="works_window", autosize_x=True, height=-50)
             with dpg.child_window(
                 tag="downloads_footer",
                 border=False,
@@ -756,7 +929,7 @@ class GUI:
                     with dpg.child_window(
                         tag=f"{work_id}_layout_left",
                         border=False,
-                        width=dpg.get_viewport_width() - 120,
+                        autosize_x=True,
                         autosize_y=True,
                     ):
                         with dpg.group(tag=f"{work_id}_heading_group", horizontal=True):
@@ -799,21 +972,13 @@ class GUI:
             tag=f"{tag}_window", parent="works_window", autosize_x=True, height=70
         ):
             with dpg.group(tag=f"{tag}_group", horizontal=True):
-                # dpg.add_button(
-                #     label="X",
-                #     tag=f"{tag}_remove_button",
-                #     width=50,
-                #     height=50,
-                #     callback=self._remove_work_item,
-                #     user_data={"identifier": identifier},
-                # )
                 dpg.add_loading_indicator(tag=f"{tag}_loading", show=True)
                 dpg.add_spacer()
                 with dpg.group(tag=f"{tag}_content_group", horizontal=True):
                     with dpg.child_window(
                         tag=f"{tag}_layout_left",
                         border=False,
-                        width=dpg.get_viewport_width() - 120,
+                        autosize_x=True,
                         autosize_y=True,
                     ):
                         with dpg.group(tag=f"{tag}_heading_group", horizontal=True):
@@ -824,15 +989,15 @@ class GUI:
                                 dpg.add_spacer(width=30)
                                 dpg.add_text(message, tag=f"{tag}_status_text")
 
-    def _make_error_window(self):
+    def _make_error_window(self) -> None:
         """Shows an error window.
 
         This will be shown if there is no running engine so the GUI cannot
         start as usual. This usually occurs if there was a rate limiting error.
         """
-        with dpg.window(label="ao3d", tag="primary_window"):
+        with dpg.window(label="froyo", tag="primary_window"):
             dpg.add_text("Hit rate limit :(\nPlease try again later.")
-        dpg.configure_viewport("ao3d", width=200, height=100, resizable=False)
+        dpg.configure_viewport("froyo", width=200, height=100, resizable=False)
 
     def _setup_fonts(self) -> None:
         """Load additional fonts to be used in the GUI."""
@@ -846,7 +1011,7 @@ class GUI:
         dpg.create_context()
         self._setup_fonts()
 
-        dpg.create_viewport(title="ao3d", width=1280, height=800)
+        dpg.create_viewport(title="froyo", width=1280, height=800)
         dpg.setup_dearpygui()
 
         if self.engine:
