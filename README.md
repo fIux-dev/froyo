@@ -120,11 +120,11 @@ series and the number of works is very large, it is recommended to turn on rate 
 of requests to 12 per minute, and will slow down the speed of the application significantly, but should prevent
 any issues with being able to load users or series.
 
-### Troubleshooting
+## Troubleshooting
 A `log.txt` file is generated in the same directory as the application when it is run. If you encounter any crashes 
 or errors, please create an issue and attach this log file.
 
-## Known issues
+### Known issues
 * A black screen is shown for a bit when the application first starts. This is due to font loading taking a while.
 * Bookmarked series cannot be downloaded yet. A workaround is to bookmark each work in the series individually.
 * Currently it is not possible to cancel loading bookmarks, series, user works, user bookmarks, generic URL pages
