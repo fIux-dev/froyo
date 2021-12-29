@@ -527,10 +527,13 @@ class Engine:
             # TODO: determine whether load_chapters=False is useful here.
             work.reload(load_chapters=False)
             LOG.info(f"Loaded work id {work.id}.")
-        except AttributeError:
+        except AttributeError as e:
             # This is a hack due to how the AO3 API works right now.
-            LOG.warning(f"Work {work.id} is only accessible to logged-in users.")
-            raise AO3.utils.AuthError("Work is only accessible to logged-in users.")
+            if not self.engine.session.is_authed:
+                LOG.warning(f"Work {work.id} is only accessible to logged-in users.")
+                raise AO3.utils.AuthError("Work is only accessible to logged-in users.")
+            else:
+                raise e
 
     def _load_work(self, work_id: int) -> Tuple[Status, Kwargs]:
         """Function to be called from a worker thread.
@@ -585,6 +588,7 @@ class Engine:
                 self._run_after_action(Action.LOAD_WORK, args=[work_id, status], kwargs=kwargs)
                 if status != Status.OK:
                     return (status, kwargs)
+                self._cancel_retries(work_id, Action.LOAD_WORK)
 
             download_path = self._get_download_file_path(work_item.work)
             LOG.info(
@@ -599,7 +603,12 @@ class Engine:
             work_item.download_path = download_path
             self._set_work_item(work_id, work_item)
             return (Status.OK, {"work_item": work_item})
-        except AO3.utils.HTTPError:
+        except (AttributeError, AO3.utils.HTTPError):
+            # This is a hack due to how the AO3 API works right now. Since the
+            # work must be loaded before download, AttributeError due to the
+            # work not being accessible should be propagated from the load.
+            # work_item.work.download can throw since the soup object can be
+            # None when we are being rate limited.
             LOG.warning(
                 f"Hit rate limit trying to download work {work_id}. Attempting to retry..."
             )
