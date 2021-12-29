@@ -61,28 +61,14 @@ class GUI:
                 }
             )
 
-    def _set_status_text_conditionally(
-        self,
-        tag: str,
-        result: int,
-        success_text: str,
-        error_text: str,
-        success_color: Tuple[int, int, int] = (0, 255, 0),
-        error_color: Tuple[int, int, int] = (255, 0, 0),
-    ):
-        """Utility function for setting a text item.
+    def _exit_callback(self) -> None:
+        """Exit callback when the application is closed.
 
-        If result is 0, set the text to `success_text` and the color to
-        `success_color`. Otherwise, set the text to `error_text` and the color 
-        to `error_color`.
+        If there is a running engine, call the exit function on the engine to
+        ensure we terminate all worker threads properly.
         """
-        color = error_color
-        text = error_text
-        if result == 0:
-            color = success_color
-            text = success_text
-        dpg.set_value(tag, text)
-        dpg.configure_item(tag, color=color, show=True)
+        if self.engine:
+            self.engine.stop()
 
     def _login(self, sender=None, data=None) -> None:
         """Callback for clicking the login button.
@@ -293,10 +279,10 @@ class GUI:
         )
 
     def _update_work_item_metadata(self, work_id: int, work: Work) -> None:
-        """Update the metadata displayed in the UI for this work."""
-        if not work.loaded:
-            return
+        """Update the metadata displayed in the UI for this work.
 
+        Work should be loaded before calling this.
+        """
         dpg.configure_item(f"{work_id}_title_group", show=True)
         dpg.configure_item(f"{work_id}_metadata_group", show=True)
         dpg.set_value(f"{work_id}_title", f"{work.title}")
@@ -329,7 +315,7 @@ class GUI:
         if not dpg.does_item_exist(f"{work_id}_window"):
             return
 
-        if not work_item or error:
+        if not (work_item and work_item.work.loaded) or error:
             error = error or "unknown"
             dpg.configure_item(
                 f"{work_id}_loading", show=status is Status.RETRY,
@@ -495,7 +481,7 @@ class GUI:
         url, page = identifier
         self._make_placeholder_non_work_item(
             f"results_page_{hash(identifier)}_placeholder",
-            f"URL",
+            f"URL (Page {page})",
             f"Loading page {page} for {url}...",
         )
 
@@ -699,6 +685,29 @@ class GUI:
         Calls the engine to attempt download for all IDs staged right now.
         """
         self.engine.download_all()
+
+    def _set_status_text_conditionally(
+        self,
+        tag: str,
+        result: int,
+        success_text: str,
+        error_text: str,
+        success_color: Tuple[int, int, int] = (0, 255, 0),
+        error_color: Tuple[int, int, int] = (255, 0, 0),
+    ):
+        """Utility function for setting a text item.
+
+        If result is 0, set the text to `success_text` and the color to
+        `success_color`. Otherwise, set the text to `error_text` and the color 
+        to `error_color`.
+        """
+        color = error_color
+        text = error_text
+        if result == 0:
+            color = success_color
+            text = success_text
+        dpg.set_value(tag, text)
+        dpg.configure_item(tag, color=color, show=True)
 
     def _make_gui(self) -> None:
         """Create the layout for the entire application."""
@@ -996,8 +1005,10 @@ class GUI:
         start as usual. This usually occurs if there was a rate limiting error.
         """
         with dpg.window(label="froyo", tag="primary_window"):
-            dpg.add_text("Hit rate limit :(\nPlease try again later.")
-        dpg.configure_viewport("froyo", width=200, height=100, resizable=False)
+            dpg.add_text(
+                "You are being rate limited :(\nPlease try again later.", wrap=-1
+            )
+        dpg.configure_viewport("froyo", width=250, height=100, resizable=False)
 
     def _setup_fonts(self) -> None:
         """Load additional fonts to be used in the GUI."""
@@ -1013,10 +1024,10 @@ class GUI:
 
         dpg.create_viewport(title="froyo", width=1280, height=800)
         dpg.setup_dearpygui()
+        dpg.set_exit_callback(self._exit_callback)
 
         if self.engine:
             self._make_gui()
-            dpg.set_exit_callback(self.engine.stop)
         else:
             self._make_error_window()
         dpg.set_primary_window("primary_window", True)

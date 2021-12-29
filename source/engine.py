@@ -579,18 +579,23 @@ class Engine:
 
         try:
             if not work_item.work.loaded:
+                # Make sure we're loaded before we download
                 self._run_before_action(Action.LOAD_WORK, args=[work_id])
-                self._reload_work_with_current_session(work_item.work)
-                self._run_after_action(
-                    Action.LOAD_WORK,
-                    args=[work_id, Status.OK],
-                    kwargs={"work_item": work_item},
-                )
+                status, kwargs = self._load_work(work_id)
+                self._run_after_action(Action.LOAD_WORK, args=[work_id, status], kwargs=kwargs)
+                if status != Status.OK:
+                    return (status, kwargs)
+
             download_path = self._get_download_file_path(work_item.work)
             LOG.info(
                 f"Downloading {work_item.work.id} - {work_item.work.title} to: {download_path}"
             )
-            work_item.work.download_to_file(download_path, self.config.filetype)
+            # Use this instead of work.download_to_file to prevent zero-byte files. 
+            content = work_item.work.download(self.config.filetype)
+            if not content:
+                return (Status.ERROR, {"error": "Downloaded 0 bytes"})
+            with open(download_path, "wb") as file:
+                file.write(content)
             work_item.download_path = download_path
             self._set_work_item(work_id, work_item)
             return (Status.OK, {"work_item": work_item})
@@ -623,7 +628,7 @@ class Engine:
             )
             return (Status.RETRY, {})
         except Exception as e:
-            LOG.error(f"Error downloading loading series id {series_id}: {e}")
+            LOG.error(f"Error loading series id {series_id}: {e}")
             return (Status.ERROR, {"error": str(e)})
 
     def _load_works_from_user(self, username: str) -> Tuple[Status, Kwargs]:
@@ -653,7 +658,7 @@ class Engine:
             )
             return (Status.RETRY, {})
         except Exception as e:
-            LOG.error(f"Error downloading works from user {username}: {e}")
+            LOG.error(f"Error loading works from user {username}: {e}")
             return (Status.ERROR, {"error": str(e)})
 
     def _load_bookmarks_from_user(self, username: str) -> Tuple[Status, Kwargs]:
@@ -692,7 +697,7 @@ class Engine:
             )
             return (Status.RETRY, {})
         except Exception as e:
-            LOG.error(f"Error downloading bookmarks from user {username}: {e}")
+            LOG.error(f"Error loading bookmarks from user {username}: {e}")
             return (Status.ERROR, {"error": str(e)})
 
     def _load_pages_from_results_list(

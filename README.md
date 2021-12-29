@@ -127,13 +127,17 @@ or errors, please create an issue and attach this log file.
 work in the series individually.
 * Currently it is not possible to cancel loading bookmarks, series, user works, user bookmarks, generic URL pages
 until the individual works are loaded. A workaround is to restart the application.
-* Closing the application while requests are ongoing can take a while to respond.
-* Ctrl+C through the command-line will not terminate the application cleanly. This may cause issues with the log
+* Clicking `Download all` while bookmarks, series, collections, etc. are loading will not download the individual
+works in them. At least the individual work IDs must be loaded for the download to be queued.
+* Closing the application while requests are ongoing can take a while to respond, in order to terminate all
+background threads cleanly.
+* `Ctrl + C` through the command-line will not terminate the application cleanly. This may cause issues with the log
 file not being written completely, etc.
 * If you have a lot of bookmarks and/or works, the downloader will likely be rate limited by AO3. Right now, 
 attempting to add works/bookmarks from a user or works from a series can potentially fail if the list is very large.
-This is because even if the request is retried, we may still be rate limited trying to fetch the list. The workaround
-is to enable the rate limiting flag in the settings.
+This is because even if the request is retried, we may be rate limited trying to fetch the entire list again on retry. 
+The workaround is to enable the rate limiting flag in the settings. Alternatively, you can attempt to submit the page
+as a generic URL instead to have individual retry attempts per page.
 
 ## License
 
