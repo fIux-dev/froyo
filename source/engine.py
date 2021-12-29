@@ -529,7 +529,7 @@ class Engine:
             LOG.info(f"Loaded work id {work.id}.")
         except AttributeError as e:
             # This is a hack due to how the AO3 API works right now.
-            if not self.engine.session.is_authed:
+            if not self.session.is_authed:
                 LOG.warning(f"Work {work.id} is only accessible to logged-in users.")
                 raise AO3.utils.AuthError("Work is only accessible to logged-in users.")
             else:
