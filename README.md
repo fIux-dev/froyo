@@ -76,17 +76,20 @@ To download all works in a tag, collection, or search result, use the `Add gener
 paste the URL listing the works in the field and select a page range to download. Use the range `1 to 0` to get
 works in all pages of the listing.
 
-**Note: Search appears to be rate limited a lot more aggressively than just accessing works by ID. It is highly 
-recommended to turn on rate limiting if you are going to download multiple pages of results. Downloading a large number
-of works is not tested, so you may run into issues.**
+**Note: Search appears to be rate limited a lot more aggressively than just accessing works by ID.** If you are
+attempting to download a large number of results, note that this may take a long time.
 
 ### Rate limiting
 
 ![retry](https://user-images.githubusercontent.com/96564770/147513133-33017c3a-a642-4b2a-98d1-34eb67acfe7c.gif)
 
 If you are attempting to download a large number of works, you may be rate limited by AO3. The application will attempt
-to retry requests that failed due to rate limiting, however, if you find that you are still getting errors trying
-to load series or users, you can try enabling the rate limit option in settings.
+to retry requests that failed due to rate limiting after some period of time, with exponential waiting times.
+If it looks like the retry times are too long, you can also manually try to trigger downloads by clicking the
+`Download all` button again.
+
+If you find that you are still getting errors trying to load series or users, you can try enabling the rate 
+limit option in settings.
 
 It is advisable to keep browsing of AO3 through the browser to a minimum while using the application. This is because
 rate limiting is shared across all your connections. If you are being rate limited in the application, you will also
