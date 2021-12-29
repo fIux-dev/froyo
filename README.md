@@ -1,7 +1,9 @@
 # froyo
 ![demo](https://user-images.githubusercontent.com/96564770/147512988-590491d0-95ed-4a22-95fa-7f5b70ad39e5.gif)
 
-A small graphical application for batch downloading works from [Archive Of Our Own](https://archiveofourown.org/) (AO3). Curate a **f**ic **r**epo **o**f **y**our **o**wn today :)
+A small graphical application for batch downloading works from [Archive Of Our Own](https://archiveofourown.org/) (AO3). 
+
+Curate a **f**ic **r**epo **o**f **y**our **o**wn today :)
 
 ### Features
 * Batch downloading works to supported formats (AZW3, EPUB, HTML, 
@@ -10,6 +12,7 @@ MOBI, PDF)
 * Download works in a series
 * Download all bookmarks in your account (public and private)
 * Download all works and (public) bookmarks from another user
+* Download works in any arbitrary AO3 search result, collection or tag
 * Supports multi-threaded requests and retrying after being rate limited
 
 
@@ -58,11 +61,24 @@ $ cp -r resources dist/resources
 4. Now the `dist/` folder containing the binary is ready for distribution.
 
 ## Usage
+
+### Downloading works, series, bookmarks
 Please see the animated previews for an example of how to interact with the application.
 
 It is not required to log in to download works, however some functionality may be restricted. Certain works may be 
 restricted to logged-in users and cannot be viewed in a guest session. In addition, bookmarks can only be imported
 when logged in.
+
+### Downloading works from any AO3 listing
+![generic2](https://user-images.githubusercontent.com/96564770/147620737-962799e6-580f-4565-975a-53ac2ca4ac50.gif)
+
+To download all works in a tag, collection, or search result, use the `Add generic URL` button. You can simply
+paste the URL listing the works in the field and select a page range to download. Use the range `1 to 0` to get
+works in all pages of the listing.
+
+**Note: Search appears to be rate limited a lot more aggressively than just accessing works by ID. It is highly 
+recommended to turn on rate limiting if you are going to download multiple pages of results. Downloading a large number
+of works is not tested, so you may run into issues.**
 
 ### Rate limiting
 
