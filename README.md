@@ -113,7 +113,7 @@ responsive performance. The concurency limit sets the maximum number of parallel
 
 Rate limiting is not enabled by default, instead the application attempts to retry with a timeout in between
 requests if a rate limit error occurs. If you are attempting to download all works or bookmarks from a user or
-series and the number of works is very large, it is recommended to turn on rate limitingg. This will limit the number
+series and the number of works is very large, it is recommended to turn on rate limiting. This will limit the number
 of requests to 12 per minute, and will slow down the speed of the application significantly, but should prevent
 any issues with being able to load users or series.
 
@@ -123,14 +123,17 @@ or errors, please create an issue and attach this log file.
 
 ## Known issues
 * A black screen is shown for a bit when the application first starts. This is due to font loading taking a while.
-* Bookmarked series cannot be downloaded yet. A workaround is to bookmark each 
-work in the series individually.
+* Bookmarked series cannot be downloaded yet. A workaround is to bookmark each work in the series individually.
 * Currently it is not possible to cancel loading bookmarks, series, user works, user bookmarks, generic URL pages
 until the individual works are loaded. A workaround is to restart the application.
+* If you have saved a login in your settings file, and you are currently being rate limited by AO3, you will not
+be able to start up the application and will see a message about rate limiting. A workaround is to clear your
+login information in `settings.ini`.
 * Clicking `Download all` while bookmarks, series, collections, etc. are loading will not download the individual
 works in them. At least the individual work IDs must be loaded for the download to be queued.
 * Closing the application while requests are ongoing can take a while to respond, in order to terminate all
-background threads cleanly.
+background threads cleanly. If rate limiting is enabled, closing the application will take even longer and may
+appear to freeze as it is shutting down.
 * `Ctrl + C` through the command-line will not terminate the application cleanly. This may cause issues with the log
 file not being written completely, etc.
 * If you have a lot of bookmarks and/or works, the downloader will likely be rate limited by AO3. Right now, 
@@ -138,6 +141,9 @@ attempting to add works/bookmarks from a user or works from a series can potenti
 This is because even if the request is retried, we may be rate limited trying to fetch the entire list again on retry. 
 The workaround is to enable the rate limiting flag in the settings. Alternatively, you can attempt to submit the page
 as a generic URL instead to have individual retry attempts per page.
+* Enabling rate limiting is pretty buggy, you may see some unexpected errors like `pop from empty list`. These 
+originate from the AO3 API's `requester` module and show up when rate limiting occurs. Please attempt to retry the 
+download when the work appears to be loaded.
 
 ## License
 

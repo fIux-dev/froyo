@@ -94,6 +94,8 @@ class Engine:
 
         # Login if the loaded settings populated these fields
         if self.config.username and self.config.password:
+            # TODO: Check rate limiting here, display an error if we cannot
+            # login due to being rate limited.
             self.login(self.config.username, self.config.password)
 
         if self.config.should_rate_limit:
