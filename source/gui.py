@@ -689,7 +689,7 @@ class GUI:
         dpg.configure_item("add_works_status_text", color=(255, 255, 0), show=True)
         dpg.set_value("add_works_status_text", "Loading...")
 
-        self.engine.load_bookmarks_by_usernames([self.engine.session.username])
+        self.engine.load_bookmarks_by_usernames({self.engine.session.username})
 
         dpg.configure_item("add_works_status_text", color=(255, 255, 0), show=False)
 

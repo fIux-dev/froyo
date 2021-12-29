@@ -582,7 +582,9 @@ class Engine:
                 self._run_before_action(Action.LOAD_WORK, args=[work_id])
                 self._reload_work_with_current_session(work_item.work)
                 self._run_after_action(
-                    Action.LOAD_WORK, args=[work_id], kwargs={"work_item": work_item}
+                    Action.LOAD_WORK,
+                    args=[work_id, Status.OK],
+                    kwargs={"work_item": work_item},
                 )
             download_path = self._get_download_file_path(work_item.work)
             LOG.info(
