@@ -33,11 +33,7 @@ def _get_base_directory() -> Path:
 
 def main() -> None:
     LOG.info("Starting...")
-    engine = None
-    try:
-        engine = Engine(_get_base_directory())
-    except AO3.utils.HTTPError:
-        LOG.error("Hit rate limiting error. Please try again later.")
+    engine = engine = Engine(_get_base_directory())
     gui = GUI(engine)
     gui.run()
     logging.shutdown()

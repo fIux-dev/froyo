@@ -134,4 +134,4 @@ settings.ini
 log.txt
 data/
 downloads/
-*.Zone.Identifier
+*.ttf:Zone.Identifier

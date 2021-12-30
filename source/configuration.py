@@ -36,6 +36,8 @@ class Configuration:
                 f"writing default configuration to: {self._filename.resolve()}"
             )
             self.write_to_file()
+        else:
+            self.parse_from_file()
 
     def parse_from_file(self) -> int:
         try:

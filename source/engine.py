@@ -30,6 +30,7 @@ class Action(enum.Enum):
     LOAD_USER_BOOKMARKS = 5
     LOAD_RESULTS_LIST = 6
     LOAD_RESULTS_PAGE = 7
+    LOGIN = 8
 
 
 class Status(enum.Enum):
@@ -90,13 +91,6 @@ class Engine:
         # Create default configuration, but load settings from file if it exists
         self.session = GuestSession()
         self.config = Configuration(self.base_dir / constants.CONFIGURATION_FILE)
-        self.get_settings()
-
-        # Login if the loaded settings populated these fields
-        if self.config.username and self.config.password:
-            # TODO: Check rate limiting here, display an error if we cannot
-            # login due to being rate limited.
-            self.login(self.config.username, self.config.password)
 
         if self.config.should_rate_limit:
             AO3.utils.limit_requests()
@@ -167,21 +161,9 @@ class Engine:
             after_action(*args, **kwargs)
 
     # Public API to be called from the GUI
-    def login(self, username: str, password: str) -> int:
-        """Attempts to login to AO3 with the specified credentials.
-
-        TODO: make this non-blocking.
-        """
-        try:
-            self.session = Session(username, password)
-            self.session.refresh_auth_token()
-            LOG.info(f"Authenticated as user: {self.session.username}")
-            data_dir = self.base_dir / constants.DATA_DIR / self.session.username
-            data_dir.mkdir(parents=True, exist_ok=True)
-            return 0
-        except AO3.utils.LoginError:
-            LOG.error("Invalid username or password.")
-            return 1
+    def login(self, username: str, password: str) -> None:
+        """Attempts to login to AO3 with the specified credentials."""
+        self._enqueue_action((username, password), Action.LOGIN)
 
     def logout(self) -> int:
         """Logs out from AO3 and use a guest session instead."""
@@ -503,6 +485,9 @@ class Engine:
             elif action == Action.LOAD_RESULTS_PAGE:
                 url, page = identifier
                 status, kwargs = self._load_works_from_results_page(url, page)
+            elif action == Action.LOGIN:
+                username, password = identifier
+                status, kwargs = self._login(username, password)
 
             if not self._is_work_id_active(identifier, action):
                 # Again, work ID may have been removed since the processing was
@@ -536,6 +521,27 @@ class Engine:
                 raise AO3.utils.AuthError("Work is only accessible to logged-in users.")
             else:
                 raise e
+
+    def _login(self, username: str, password: str) -> Tuple[Status, Kwargs]:
+        """Function to be called from a worker thread.
+
+        This will try to login with the specified credentials.
+        """
+        self.session = GuestSession()
+        try:
+            self.session = Session(username, password)
+            self.session.refresh_auth_token()
+            LOG.info(f"Authenticated as user: {self.session.username}")
+            return (Status.OK, {"user": self.session.user})
+        except AO3.utils.HTTPError as e:
+            LOG.error(f"HTTP error: {e}. Not logged in.")
+            return (Status.ERROR, {"error": "You are being rate limited"})
+        except AO3.utils.LoginError:
+            LOG.error("Invalid username or password.")
+            return (Status.ERROR, {"error": "Invalid username or password"})
+        except Exception as e:
+            LOG.error(f"Error logging in: {e}")
+            return (Status.ERROR, {"error": str(e)})
 
     def _load_work(self, work_id: int) -> Tuple[Status, Kwargs]:
         """Function to be called from a worker thread.
@@ -587,7 +593,9 @@ class Engine:
                 # Make sure we're loaded before we download
                 self._run_before_action(Action.LOAD_WORK, args=[work_id])
                 status, kwargs = self._load_work(work_id)
-                self._run_after_action(Action.LOAD_WORK, args=[work_id, status], kwargs=kwargs)
+                self._run_after_action(
+                    Action.LOAD_WORK, args=[work_id, status], kwargs=kwargs
+                )
                 if status != Status.OK:
                     return (status, kwargs)
                 self._cancel_retries(work_id, Action.LOAD_WORK)
@@ -596,7 +604,7 @@ class Engine:
             LOG.info(
                 f"Downloading {work_item.work.id} - {work_item.work.title} to: {download_path}"
             )
-            # Use this instead of work.download_to_file to prevent zero-byte files. 
+            # Use this instead of work.download_to_file to prevent zero-byte files.
             content = work_item.work.download(self.config.filetype)
             if not content:
                 return (Status.ERROR, {"error": "Downloaded 0 bytes"})

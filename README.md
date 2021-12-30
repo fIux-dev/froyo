@@ -129,9 +129,6 @@ or errors, please create an issue and attach this log file.
 * Bookmarked series cannot be downloaded yet. A workaround is to bookmark each work in the series individually.
 * Currently it is not possible to cancel loading bookmarks, series, user works, user bookmarks, generic URL pages
 until the individual works are loaded. A workaround is to restart the application.
-* If you have saved a login in your settings file, and you are currently being rate limited by AO3, you will not
-be able to start up the application and will see a message about rate limiting. A workaround is to clear your
-login information in `settings.ini`.
 * Clicking `Download all` while bookmarks, series, collections, etc. are loading will not download the individual
 works in them. At least the individual work IDs must be loaded for the download to be queued.
 * Closing the application while requests are ongoing can take a while to respond, in order to terminate all

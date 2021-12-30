@@ -58,6 +58,10 @@ class GUI:
                         self._show_placeholder_results_page_item,
                         self._update_placeholder_results_page_item,
                     ),
+                    Action.LOGIN: (
+                        self._show_logging_in_status_text,
+                        self._update_login_status_text,
+                    ),
                 }
             )
 
@@ -70,24 +74,41 @@ class GUI:
         if self.engine:
             self.engine.stop()
 
+    def _show_logging_in_status_text(self, identifier: Tuple[str, str]) -> None:
+        """Callback to be run before logging in."""
+        dpg.configure_item("login_status_text", color=(255, 255, 0), show=True)
+        dpg.set_value("login_status_text", "Logging in...")
+
+    def _update_login_status_text(
+        self,
+        username: str,
+        status: Status,
+        user: Optional[User] = None,
+        error: Optional[str] = None,
+    ) -> None:
+        """Callback for updating the login status text."""
+        if status is Status.OK and user is not None:
+            dpg.configure_item("login_status_text", color=(0, 255, 0), show=True)
+            dpg.set_value("login_status_text", f"Logged in as {user.username}")
+
+        else:
+            dpg.configure_item("login_status_text", color=(255, 0, 0), show=True)
+            dpg.set_value("login_status_text", f"Login error: {error or 'unknown'}")
+
     def _login(self, sender=None, data=None) -> None:
         """Callback for clicking the login button.
 
-        Calls the login function on the engine and displays the status.
+        Calls the login function on the engine.
         """
-        dpg.configure_item("login_status_text", color=(255, 255, 0), show=True)
-        dpg.set_value("login_status_text", "Logging in...")
+        dpg.configure_item("login_status_text", color=(255, 0, 0), show=False)
 
         username = dpg.get_value("username_input")
         password = dpg.get_value("password_input")
 
-        result = self.engine.login(username, password)
-        self._set_status_text_conditionally(
-            "login_status_text",
-            result,
-            f"Logged in as: {self.engine.session.username}",
-            "Login error",
-        )
+        if not (username or password):
+            return
+
+        self.engine.login(username, password)
 
     def _logout(self, sender=None, data=None) -> None:
         """Callback for clicking the logout button.
@@ -101,7 +122,7 @@ class GUI:
 
         result = self.engine.logout()
         self._set_status_text_conditionally(
-            "login_status_text", result, "Logged out", "Logout error"
+            "login_status_text", result == 0, "Logged out", "Logout error"
         )
         dpg.set_value("remember_me_checkbox", False)
 
@@ -157,7 +178,7 @@ class GUI:
 
         self._set_status_text_conditionally(
             "settings_status_text",
-            result,
+            result == 0,
             "Saved! Restart for engine changes.",
             "Save error",
         )
@@ -189,7 +210,7 @@ class GUI:
 
         self._set_status_text_conditionally(
             "settings_status_text",
-            result,
+            result == 0,
             "Loaded saved settings!",
             "Error loading settings",
         )
@@ -200,7 +221,6 @@ class GUI:
         Tries to open the destination of the downloaded file with the system
         default applications.
         """
-        # TODO: add a message if file could not be opened
         work_id = user_data["work_id"]
         try:
             utils.open_file(user_data["path"])
@@ -504,10 +524,15 @@ class GUI:
         Displays a small popup window with a multiline textbox where users can
         enter text.
         """
-        if dpg.does_item_exist("user_input_dialog"):
+        add_type = user_data.get("add_type", None)
+        input_type = user_data.get("input_type", None)
+        if add_type is None or input_type is None:
+            return
+
+        if dpg.does_item_exist(f"{add_type}_user_input_dialog"):
             dpg.configure_item(
-                "user_input_dialog",
-                label=f"Add {user_data['add_type']}",
+                f"{add_type}_user_input_dialog",
+                label=f"Add {add_type}",
                 width=600,
                 height=300,
                 pos=(
@@ -515,18 +540,18 @@ class GUI:
                     (dpg.get_viewport_height() - 300) // 2,
                 ),
             )
-            dpg.configure_item("user_input_dialog", show=True)
+            dpg.configure_item(f"{add_type}_user_input_dialog", show=True)
             dpg.set_value(
-                "user_input_dialog_text",
-                f"Enter {user_data['input_type']} on a new line each:",
+                f"{add_type}_user_input_dialog_text",
+                f"Enter {add_type} on a new line each:",
             )
-            dpg.set_value("user_input", "")
-            dpg.set_item_user_data("submit_user_input_button", user_data)
+            dpg.set_value(f"{add_type}_user_input", "")
+            dpg.set_item_user_data(f"{add_type}_submit_user_input_button", user_data)
             return
 
         with dpg.window(
-            label=f"Add {user_data['add_type']}",
-            tag="user_input_dialog",
+            label=f"Add {add_type}",
+            tag=f"{add_type}_user_input_dialog",
             width=600,
             height=300,
             pos=(
@@ -535,13 +560,13 @@ class GUI:
             ),
         ):
             dpg.add_text(
-                f"Enter {user_data['input_type']} on a new line each:",
-                tag="user_input_dialog_text",
+                f"Enter {input_type} on a new line each:",
+                tag=f"{add_type}_user_input_dialog_text",
             )
-            dpg.add_input_text(tag="user_input", multiline=True, width=-1, height=-50)
+            dpg.add_input_text(tag=f"{add_type}_user_input", multiline=True, width=-1, height=-50)
             dpg.add_button(
                 label="OK",
-                tag="submit_user_input_button",
+                tag=f"{add_type}_submit_user_input_button",
                 width=50,
                 height=40,
                 callback=self._submit_user_input,
@@ -554,13 +579,18 @@ class GUI:
         This will call the appropriate function to load works depending on
         what the caller was.
         """
-        if dpg.does_item_exist("user_input_dialog"):
-            dpg.configure_item("user_input_dialog", show=False)
+        add_type = user_data.get("add_type", None)
+        input_type = user_data.get("input_type", None)
+        if add_type is None or input_type is None:
+            return
+
+        if dpg.does_item_exist(f"{add_type}_user_input_dialog"):
+            dpg.configure_item(f"{add_type}_user_input_dialog", show=False)
 
         # TODO: add an error message if some works in list couldn't be loaded
         items = set(
             filter(
-                None, [line.strip() for line in dpg.get_value("user_input").split("\n")]
+                None, [line.strip() for line in dpg.get_value(f"{add_type}_user_input").split("\n")]
             )
         )
 
@@ -569,7 +599,6 @@ class GUI:
 
         # TODO: generalize this to either work for all types of URLs, or support
         # IDs or URLs in the list.
-        add_type = user_data["add_type"]
         if add_type == "works":
             self.engine.load_works_from_work_urls(items)
         elif add_type == "series":
@@ -689,7 +718,7 @@ class GUI:
     def _set_status_text_conditionally(
         self,
         tag: str,
-        result: int,
+        success: bool,
         success_text: str,
         error_text: str,
         success_color: Tuple[int, int, int] = (0, 255, 0),
@@ -703,7 +732,7 @@ class GUI:
         """
         color = error_color
         text = error_text
-        if result == 0:
+        if success:
             color = success_color
             text = success_text
         dpg.set_value(tag, text)
@@ -754,14 +783,8 @@ class GUI:
                         dpg.add_text(
                             "", tag="login_status_text", show=False, indent=200
                         )
-                        if self.engine.config.username or self.engine.config.password:
-                            self._set_status_text_conditionally(
-                                "login_status_text",
-                                # Since this function compares if result == 0
-                                not self.engine.session.is_authed,
-                                f"Logged in as: {self.engine.session.username}",
-                                "Not logged in",
-                            )
+                        # Try to login if we have saved credentials
+                        self._login()
 
                     dpg.add_checkbox(
                         label="Remember me?",
@@ -815,7 +838,7 @@ class GUI:
                             max_clamped=True,
                         )
                     with dpg.group(tag="rate_limit_group", horizontal=True):
-                        dpg.add_text("Use rate limiting?", tag="rate_limit_text")
+                        dpg.add_text("Limit requests to AO3?", tag="rate_limit_text")
                         dpg.add_checkbox(
                             tag="rate_limit_checkbox",
                             default_value=self.engine.config.should_rate_limit,
@@ -895,7 +918,7 @@ class GUI:
                         callback=self._download_all,
                     )
                     dpg.add_button(
-                        label="Remove all",
+                        label="Clear all",
                         tag="remove_all_button",
                         height=50,
                         width=100,
@@ -998,18 +1021,6 @@ class GUI:
                                 dpg.add_spacer(width=30)
                                 dpg.add_text(message, tag=f"{tag}_status_text")
 
-    def _make_error_window(self) -> None:
-        """Shows an error window.
-
-        This will be shown if there is no running engine so the GUI cannot
-        start as usual. This usually occurs if there was a rate limiting error.
-        """
-        with dpg.window(label="froyo", tag="primary_window"):
-            dpg.add_text(
-                "You are being rate limited :(\nPlease try again later.", wrap=-1
-            )
-        dpg.configure_viewport("froyo", width=250, height=100, resizable=False)
-
     def _setup_fonts(self) -> None:
         """Load additional fonts to be used in the GUI."""
         with dpg.font_registry():
@@ -1025,11 +1036,7 @@ class GUI:
         dpg.create_viewport(title="froyo", width=1280, height=800)
         dpg.setup_dearpygui()
         dpg.set_exit_callback(self._exit_callback)
-
-        if self.engine:
-            self._make_gui()
-        else:
-            self._make_error_window()
+        self._make_gui()
         dpg.set_primary_window("primary_window", True)
 
         dpg.show_viewport()
