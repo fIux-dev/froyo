@@ -14,56 +14,55 @@ LOG = logging.getLogger(__name__)
 
 
 class GUI:
-    engine: Optional[Engine] = None
+    engine: Engine
 
     _work_ids: Set[int]
     _downloaded: Set[int]
 
-    def __init__(self, engine: Optional[Engine] = None):
+    def __init__(self, engine: Engine):
         self.engine = engine
         self._work_ids = set()
         self._downloaded = set()
 
-        if engine:
-            self.engine.set_enqueue_callbacks(
-                {Action.LOAD_WORK: (self._make_placeholder_work_item, None)}
-            )
-            self.engine.set_action_callbacks(
-                {
-                    Action.LOAD_WORK: (
-                        self._show_work_item_loading,
-                        self._update_work_item_after_load,
-                    ),
-                    Action.DOWNLOAD_WORK: (
-                        self._show_work_item_downloading,
-                        self._update_work_item_after_download,
-                    ),
-                    Action.LOAD_SERIES: (
-                        self._show_placeholder_series_item,
-                        self._update_placeholder_series_item,
-                    ),
-                    Action.LOAD_USER_WORKS: (
-                        self._show_placeholder_user_works_item,
-                        self._update_placeholder_user_works_item,
-                    ),
-                    Action.LOAD_USER_BOOKMARKS: (
-                        self._show_placeholder_user_bookmarks_item,
-                        self._update_placeholder_user_bookmarks_item,
-                    ),
-                    Action.LOAD_RESULTS_LIST: (
-                        self._show_placeholder_results_list_item,
-                        self._update_placeholder_results_list_item,
-                    ),
-                    Action.LOAD_RESULTS_PAGE: (
-                        self._show_placeholder_results_page_item,
-                        self._update_placeholder_results_page_item,
-                    ),
-                    Action.LOGIN: (
-                        self._show_logging_in_status_text,
-                        self._update_login_status_text,
-                    ),
-                }
-            )
+        self.engine.set_enqueue_callbacks(
+            {Action.LOAD_WORK: (self._make_placeholder_work_item, None)}
+        )
+        self.engine.set_action_callbacks(
+            {
+                Action.LOAD_WORK: (
+                    self._show_work_item_loading,
+                    self._update_work_item_after_load,
+                ),
+                Action.DOWNLOAD_WORK: (
+                    self._show_work_item_downloading,
+                    self._update_work_item_after_download,
+                ),
+                Action.LOAD_SERIES: (
+                    self._show_placeholder_series_item,
+                    self._update_placeholder_series_item,
+                ),
+                Action.LOAD_USER_WORKS: (
+                    self._show_placeholder_user_works_item,
+                    self._update_placeholder_user_works_item,
+                ),
+                Action.LOAD_USER_BOOKMARKS: (
+                    self._show_placeholder_user_bookmarks_item,
+                    self._update_placeholder_user_bookmarks_item,
+                ),
+                Action.LOAD_RESULTS_LIST: (
+                    self._show_placeholder_results_list_item,
+                    self._update_placeholder_results_list_item,
+                ),
+                Action.LOAD_RESULTS_PAGE: (
+                    self._show_placeholder_results_page_item,
+                    self._update_placeholder_results_page_item,
+                ),
+                Action.LOGIN: (
+                    self._show_logging_in_status_text,
+                    self._update_login_status_text,
+                ),
+            }
+        )
 
     def _exit_callback(self) -> None:
         """Exit callback when the application is closed.
@@ -563,7 +562,9 @@ class GUI:
                 f"Enter {input_type} on a new line each:",
                 tag=f"{add_type}_user_input_dialog_text",
             )
-            dpg.add_input_text(tag=f"{add_type}_user_input", multiline=True, width=-1, height=-50)
+            dpg.add_input_text(
+                tag=f"{add_type}_user_input", multiline=True, width=-1, height=-50
+            )
             dpg.add_button(
                 label="OK",
                 tag=f"{add_type}_submit_user_input_button",
@@ -590,7 +591,11 @@ class GUI:
         # TODO: add an error message if some works in list couldn't be loaded
         items = set(
             filter(
-                None, [line.strip() for line in dpg.get_value(f"{add_type}_user_input").split("\n")]
+                None,
+                [
+                    line.strip()
+                    for line in dpg.get_value(f"{add_type}_user_input").split("\n")
+                ],
             )
         )
 
@@ -801,7 +806,9 @@ class GUI:
                         dpg.add_text("Directory:", tag="downloads_dir_text")
                         dpg.add_input_text(
                             tag="downloads_dir_input",
-                            default_value=self.engine.config.downloads_dir.resolve(),
+                            default_value=str(
+                                self.engine.config.downloads_dir.resolve()
+                            ),
                         )
                         dpg.add_button(
                             label="Browse",

@@ -115,13 +115,15 @@ class Engine:
 
     # Functions for interacting with GUI callbacks
     def set_action_callbacks(
-        self, callbacks: Dict[Action, Tuple[GUICallback, GUICallback]]
+        self,
+        callbacks: Dict[Action, Tuple[Optional[GUICallback], Optional[GUICallback]]],
     ) -> None:
         """Sets the callbacks (before, after) for each action."""
         self._action_callbacks.update(callbacks)
 
     def set_enqueue_callbacks(
-        self, callbacks: Dict[Action, Tuple[GUICallback, GUICallback]]
+        self,
+        callbacks: Dict[Action, Tuple[Optional[GUICallback], Optional[GUICallback]]],
     ) -> None:
         """Sets the callbacks to be run when enqueuing action."""
         self._enqueue_callbacks.update(callbacks)
@@ -692,7 +694,9 @@ class Engine:
         try:
             bookmarks = []
             kwargs = {}
-            if username == self.session.username:
+            if username == self.session.username and isinstance(
+                self.session, AO3.Session
+            ):
                 bookmarks = self.session.get_bookmarks(
                     use_threading=self.config.should_use_threading
                 )

@@ -1,5 +1,6 @@
 import AO3
 import bs4
+import logging
 import requests
 import urllib.parse
 
@@ -16,6 +17,8 @@ from AO3.users import User
 from AO3.works import Work
 
 from . import constants, utils
+
+LOG = logging.getLogger(__name__)
 
 
 def get_ao3_url(url: str, page: Optional[int] = None) -> Optional[str]:
@@ -73,14 +76,18 @@ class Results:
         # page of results.
         try:
             pagination_element = soup.find("ol", {"role": "navigation"})
-            if pagination_element is None:
+            if not isinstance(pagination_element, bs4.element.Tag):
                 self.pages = 1
                 return
 
             self.pages = int(pagination_element.find_all("li")[-2].get_text())
             if self.page_end == 0:
                 self.page_end = self.pages
-        except Exception:
+        except Exception as e:
+            LOG.warning(
+                f"Got exception trying to find number of pages for "
+                f"`{self.url}`: {e}. Assuming number of pages is 1."
+            )
             self.pages = 1
 
 
@@ -88,13 +95,13 @@ class ResultsPage:
     url: str
     page: int
     session: Optional[requests.Session] = None
-    work_ids: Optional[List[int]] = None
+    work_ids: List[int] = []
 
     def __init__(self, url: str, page: int, session: Optional[requests.Session] = None):
         self.url = url
         self.session = session
         self.page = page
-        self.work_ids = None
+        self.work_ids = []
 
     @threadable.threadable
     def update(self) -> None:
@@ -108,8 +115,11 @@ class ResultsPage:
         soup = _get(url, self.session)
 
         results = soup.find("ol", {"class": ("work", "index", "group")})
-        if results is None:
-            self.work_ids = []
+        if not isinstance(results, bs4.element.Tag):
+            LOG.warning(
+                f"Could not find works element on page: `{url}`. No works IDs "
+                f"will be returned."
+            )
             return
 
         work_ids = []
@@ -138,7 +148,8 @@ def _get(url: str, session: Optional[requests.Session] = None) -> bs4.BeautifulS
         req = session.get(url)
     if req.status_code == 429:
         raise AO3.utils.HTTPError(
-            "We are being rate-limited. Try again in a while or reduce the number of requests"
+            "We are being rate-limited. Try again in a while or reduce the "
+            "number of requests."
         )
     soup = BeautifulSoup(req.content, features="lxml")
     return soup
